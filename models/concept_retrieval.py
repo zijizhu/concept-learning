@@ -32,7 +32,7 @@ class MahalanobisCriterion(nn.Module):
         self.regularization = regularization
         self.division_power = division_power
     
-    def forward(self, outputs: torch.Tensor, targets, weights, concepts_encoded):
+    def forward(self, outputs: torch.Tensor, targets, weights, target_dis):
         xe_loss = self.xe(outputs, targets)
         if not self.regularization:
             return xe_loss
@@ -40,18 +40,18 @@ class MahalanobisCriterion(nn.Module):
         # Original implementation from https://github.com/wangyu-ustc/LM4CV/blob/main/utils/train_utils.py#L208
         # which is different to the one described in the paper.
         weights_norm = torch.linalg.vector_norm(weights, dim=-1, keepdim=True)
-        mu = torch.mean(concepts_encoded, dim=0)
-        sigma_inv = torch.inverse(torch.cov(concepts_encoded.T)).to(outputs.device)    # Using torch.inverse will have different result to np.linalg.inv
+        mu = torch.mean(target_dis, dim=0)
+        sigma_inv = torch.inverse(torch.cov(target_dis.T)).to(outputs.device)    # Using torch.inverse will have different result to np.linalg.inv
         # Alternate implementation: sigma_inv = torch.inverse(torch.cov(distribution.T))
 
         mean_distance = torch.stack([_mean_squared_mahalanobis(concept, mu, sigma_inv)
                                      for concept
-                                     in concepts_encoded]).mean().to(outputs.device)
+                                     in target_dis]).mean().to(outputs.device)
 
         mahalanobis_loss = _mean_squared_mahalanobis(weights / weights_norm, mu, sigma_inv)
         mahalanobis_loss_scaled = (mahalanobis_loss - mean_distance) / (mean_distance ** self.division_power)
 
-        return xe_loss + torch.abs(mahalanobis_loss_scaled)
+        return xe_loss + torch.abs(mahalanobis_loss_scaled), xe_loss, mahalanobis_loss_scaled
 
 
 class ConceptRetrievalModel(nn.Module):
@@ -60,7 +60,7 @@ class ConceptRetrievalModel(nn.Module):
         self.k = k
         self.dim = concepts_encoded.shape[-1]
         self.register_buffer('all_concepts', concepts_encoded)
-        self.concept_prototypes = nn.Parameter(torch.randn(k, self.dim))
+        self.prototypes = nn.Parameter(torch.randn(k, self.dim))
         self.retrieved_concepts = None
         self.classifier = nn.Linear(k, num_classes)
         assert retrieval_algo in ['greedy', 'hungarian']
@@ -70,7 +70,7 @@ class ConceptRetrievalModel(nn.Module):
         if self.retrieve_concepts is not None:
             concept_emb = self.retrieve_concepts
         else:
-            concept_emb = self.concept_prototypes
+            concept_emb = self.prototypes
         concept_logits = x @ concept_emb
         class_logits = self.classifier(concept_logits)
         return concept_logits, class_logits
@@ -79,7 +79,7 @@ class ConceptRetrievalModel(nn.Module):
     def retrieve_concepts(self, algo: str='hungarian'):
         if self.retrieval_algo == 'greedy':
             selected_idxs = []
-            for cp in tqdm(self.concept_prototypes):
+            for cp in tqdm(self.prototypes):
                 cp = cp/ torch.linalg.vector_norm(cp)
                 similarities = F.cosine_similarity(cp, self.all_concepts)
                 sorted_idxs = torch.argsort(similarities)
@@ -91,7 +91,7 @@ class ConceptRetrievalModel(nn.Module):
             self.register_buffer('retrieved_concepts', self.all_concepts[selected_idxs])
             return selected_idxs
         elif self.retrieval_algo == 'hungarian':
-            cost_matrix = pairwise_cosine_similarity(self.concept_prototypes, self.all_concepts)
+            cost_matrix = pairwise_cosine_similarity(self.prototypes, self.all_concepts)
             prototype_idxs, concept_idxs = linear_sum_assignment(cost_matrix)
             self.register_buffer('retrieved_concepts', self.all_concepts[concept_idxs])
             return concept_idxs
