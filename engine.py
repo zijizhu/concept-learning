@@ -48,7 +48,7 @@ class Engine(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         im_ids, samples, targets = batch
 
-        samples_encoded = self.clip_model.encode_image(samples)
+        samples_encoded = self.clip_model.encode_image(samples).to(torch.float32)
         concept_logits, class_logits = self.model(samples_encoded)
         test_loss = F.cross_entropy(class_logits, targets)
 
