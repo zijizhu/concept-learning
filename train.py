@@ -18,7 +18,7 @@ if __name__ == '__main__':
     parser.add_argument('--concepts_path', type=str)
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--lr', default=1e-2, type=float)
-    parser.add_argument('--device', default='cpu', type=str)
+    parser.add_argument('--device', default='cuda', type=str)
     parser.add_argument('--batch_size', default=4096, type=int)
     parser.add_argument('--stage_one_epochs', default=5000, type=int)
     parser.add_argument('--stage_two_epochs', default=5000, type=int)

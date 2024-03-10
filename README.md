@@ -2,7 +2,8 @@
 
 ## Envrionment Setup
 ```bash
-pip install --upgrade lightning
+pip install --upgrade ftfy regex tqdm pandas scipy lightning
+pip install git+https://github.com/openai/CLIP.git
 ```
 
 ## Data Preparation
@@ -19,4 +20,9 @@ python prepare_concepts.py \
 --dataset CUB_200_2011 \
 --output_dir concepts/CUB_200_2011/LCDA \
 --concept_path concepts/CUB_200_2011/LCDA/concepts.txt
+```
+
+## Training
+```bash
+python train.py --dataset_dir data/CUB_200_2011 --concepts_path concepts/CUB_200_2011/LCDA/concepts_clip_RN50.pt
 ```
