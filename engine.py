@@ -33,15 +33,15 @@ class Engine(L.LightningModule):
                 weights=self.model.prototypes,
                 target_dis=self.model.all_concepts
             )
-            self.log('total_loss', train_loss)
-            self.log('cross_entropy_loss', xe_loss)
-            self.log('mahalanobis_loss', mhl_loss)
+            self.log('train_loss', train_loss, on_step=True)
+            self.log('cross_entropy_loss', xe_loss, on_step=True)
+            self.log('mahalanobis_loss', mhl_loss, on_step=True)
         else:
             train_loss = F.cross_entropy(class_logits, targets)
-            self.log('loss', train_loss)
+            self.log('train_loss', train_loss, on_step=True)
         
         batch_acc = torch.sum(class_logits.argmax(-1) == targets) / targets.size(0)
-        self.log('batch_train_acc', batch_acc)
+        self.log('batch_train_acc', batch_acc, on_step=True)
         
         return train_loss
     
@@ -55,8 +55,8 @@ class Engine(L.LightningModule):
         preds = torch.argmax(class_logits, dim=-1)
         acc = torch.sum(preds == targets) / targets.size(0)
 
-        self.log("test_loss", test_loss)
-        self.log("batch_test_acc", acc)
+        self.log("test_loss", test_loss, on_step=True)
+        self.log("batch_test_acc", acc, on_step=True)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)

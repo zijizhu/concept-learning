@@ -66,6 +66,7 @@ if __name__ == '__main__':
     print('Stage 1 training:')
     stage1_trainer = Trainer(max_epochs=args.stage_one_epochs,
                              min_epochs=3000,
+                             log_every_n_steps=1,
                              accelerator=args.device)
     
     stage1_trainer.fit(model=engine,
@@ -79,6 +80,7 @@ if __name__ == '__main__':
     print('Stage 2 training:')
     stage2_trainer = Trainer(max_epochs=args.stage_one_epochs,
                              min_epochs=3000,
+                             log_every_n_steps=1,
                              accelerator=args.device)
 
     stage2_trainer.fit(model=engine,
