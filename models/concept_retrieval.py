@@ -76,7 +76,7 @@ class ConceptRetrievalModel(nn.Module):
         return concept_logits, class_logits
 
     @torch.no_grad()
-    def retrieve_concepts(self, algo: str='hungarian'):
+    def retrieve_concepts(self):
         if self.retrieval_algo == 'greedy':
             selected_idxs = []
             for cp in tqdm(self.prototypes):
