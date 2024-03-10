@@ -15,6 +15,7 @@ from models.concept_retrieval import ConceptRetrievalModel, MahalanobisCriterion
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_dir', type=str)
+    parser.add_argument('--concepts_path', type=str)
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--lr', default=1e-2, type=float)
     parser.add_argument('--device', default='cpu', type=str)
@@ -41,7 +42,7 @@ if __name__ == '__main__':
     test_dataset = CUBDataset(args.dataset_dir, split='test', transforms=clip_preprocess)
     test_dataloader = DataLoader(test_dataset, args.batch_size, shuffle=False)
 
-    concepts_encoded = torch.load(os.path.join(args.dataset_dir, 'concepts_encoded.pt')).to(torch.float32)
+    concepts_encoded = torch.load(args.concepts_path).to(torch.float32)
 
     # Number of concepts and classes
     if not args.num_concepts:
@@ -65,11 +66,11 @@ if __name__ == '__main__':
     print('Stage 1 training:')
     stage1_trainer = Trainer(max_epochs=args.stage_one_epochs,
                              min_epochs=3000,
-                             devices=args.devices)
+                             accelerator=args.device)
     
     stage1_trainer.fit(model=engine,
                        train_dataloaders=train_dataloader,
-                       val_dataloaders=test_dataloader)
+                       test_dataloader=test_dataloader)
     
     # Retrieve concepts after stage 1 training
     model.match_concepts()
@@ -78,7 +79,8 @@ if __name__ == '__main__':
     print('Stage 2 training:')
     stage2_trainer = Trainer(max_epochs=args.stage_one_epochs,
                              min_epochs=3000,
-                             devices=args.devices)
+                             accelerator=args.device)
+
     stage2_trainer.fit(model=engine,
                        train_dataloaders=train_dataloader,
-                       val_dataloaders=test_dataloader)
+                       test_dataloader=test_dataloader)

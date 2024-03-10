@@ -23,7 +23,7 @@ class CUBDataset(Dataset):
         # Make class_id 0-indexed
         merged_df['class_id'] = merged_df['class_id'] - 1
         self.class_id2name = {}
-        for line in open('datasets/CUB_200_2011/classes.txt'):
+        for line in open(os.path.join(dataset_dir, 'CUB_200_2011', 'classes.txt')):
             [class_id, class_name] = line.strip().split(' ')
             self.class_id2name[int(class_id) - 1] = class_name
 
