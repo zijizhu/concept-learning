@@ -45,7 +45,7 @@ class Engine(L.LightningModule):
         
         return train_loss
     
-    def test_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx):
         im_ids, samples, targets = batch
 
         samples_encoded = self.clip_model.encode_image(samples)

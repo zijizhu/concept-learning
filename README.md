@@ -1,5 +1,10 @@
 # concept-learning
 
+## Envrionment Setup
+```bash
+pip install --upgrade lightning
+```
+
 ## Data Preparation
 
 ### Concepts

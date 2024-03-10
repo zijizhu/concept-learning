@@ -70,7 +70,7 @@ if __name__ == '__main__':
     
     stage1_trainer.fit(model=engine,
                        train_dataloaders=train_dataloader,
-                       test_dataloader=test_dataloader)
+                       val_dataloaders=test_dataloader)
     
     # Retrieve concepts after stage 1 training
     model.match_concepts()
@@ -83,4 +83,4 @@ if __name__ == '__main__':
 
     stage2_trainer.fit(model=engine,
                        train_dataloaders=train_dataloader,
-                       test_dataloader=test_dataloader)
+                       val_dataloader=test_dataloader)
