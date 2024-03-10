@@ -67,16 +67,16 @@ class ConceptRetrievalModel(nn.Module):
         self.retrieval_algo = retrieval_algo
     
     def forward(self, x):
-        if self.retrieve_concepts is not None:
-            concept_emb = self.retrieve_concepts
+        if self.retrieved_concepts is not None:
+            concept_emb = self.retrieved_concepts
         else:
             concept_emb = self.prototypes
-        concept_logits = x @ concept_emb
+        concept_logits = x @ concept_emb.T
         class_logits = self.classifier(concept_logits)
         return concept_logits, class_logits
 
     @torch.no_grad()
-    def retrieve_concepts(self):
+    def match_concepts(self):
         if self.retrieval_algo == 'greedy':
             selected_idxs = []
             for cp in tqdm(self.prototypes):
