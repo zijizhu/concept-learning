@@ -20,8 +20,8 @@ if __name__ == '__main__':
     parser.add_argument('--lr', default=1e-2, type=float)
     parser.add_argument('--device', default='cuda', type=str)
     parser.add_argument('--batch_size', default=4096, type=int)
-    parser.add_argument('--stage_one_epochs', default=5000, type=int)
-    parser.add_argument('--stage_two_epochs', default=5000, type=int)
+    parser.add_argument('--stage_one_epochs', default=100, type=int)
+    parser.add_argument('--stage_two_epochs', default=100, type=int)
     parser.add_argument('--backbone', type=str, choices=['RN50'], default='RN50')
     parser.add_argument('--retrieval_algo', type=str, choices=['greedy', 'hungarian'], default='hungarian')
 
@@ -65,7 +65,7 @@ if __name__ == '__main__':
     # Stage 1 training
     print('Stage 1 training:')
     stage1_trainer = Trainer(max_epochs=args.stage_one_epochs,
-                             min_epochs=3000,
+                             min_epochs=10,
                              log_every_n_steps=1,
                              accelerator=args.device)
     
@@ -79,7 +79,7 @@ if __name__ == '__main__':
     # Stage 2 training
     print('Stage 2 training:')
     stage2_trainer = Trainer(max_epochs=args.stage_one_epochs,
-                             min_epochs=3000,
+                             min_epochs=10,
                              log_every_n_steps=1,
                              accelerator=args.device)
 
