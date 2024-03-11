@@ -27,7 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('--retrieval_algo', type=str, choices=['greedy', 'hungarian'], default='hungarian')
 
     parser.add_argument('--num-concepts', default=None, type=int)
-    parser.add_argument('--mmd_coef', default=10, type=float)
+    parser.add_argument('--mmd_coef', default=100, type=float)
 
     args = parser.parse_args()
     print(args)

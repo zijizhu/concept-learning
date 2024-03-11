@@ -2,15 +2,17 @@ import os
 import sys
 import math
 import torch
-from torch import nn
 import pickle as pkl
+from torch import nn
+import lightning as L
 from tqdm.auto import tqdm
 from typing import Iterable
 import torch.nn.functional as F
-import lightning as L
+
+from models.concept_retrieval import ConceptRetrievalModel
 
 class Engine(L.LightningModule):
-    def __init__(self, clip_model: nn.Module, model: nn.Module,
+    def __init__(self, clip_model: nn.Module, model: ConceptRetrievalModel,
                  criterion: nn.Module, lr: float):
         super().__init__()
         self.model = model
