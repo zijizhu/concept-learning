@@ -9,7 +9,8 @@ from lightning import Trainer, seed_everything
 
 from engine import Engine
 from dataset.cub_dataset import CUBDataset
-from models.concept_retrieval import ConceptRetrievalModel, MahalanobisCriterion
+from models.concept_retrieval import (ConceptRetrievalModel,
+                                      MahalanobisCriterion, MMDCriterion)
 
 
 if __name__ == '__main__':
@@ -26,6 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('--retrieval_algo', type=str, choices=['greedy', 'hungarian'], default='hungarian')
 
     parser.add_argument('--num-concepts', default=None, type=int)
+    parser.add_argument('--mmd_coef', default=10, type=float)
 
     args = parser.parse_args()
     print(args)
@@ -55,7 +57,8 @@ if __name__ == '__main__':
                                   k=args.num_concepts,
                                   num_classes=num_classes,
                                   retrieval_algo=args.retrieval_algo)
-    criterion = MahalanobisCriterion()
+    # criterion = MahalanobisCriterion()
+    criterion = MMDCriterion(mmd_coef=args.mmd_coef)
 
     engine = Engine(clip_model=clip_model,
                     model=model,

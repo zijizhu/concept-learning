@@ -28,10 +28,10 @@ class Engine(L.LightningModule):
         
         if self.model.retrieved_concepts is None:
             train_loss, xe_loss, mhl_loss = self.criterion(
-                outputs=class_logits,
-                targets=targets,
+                preds=class_logits,
+                tgts=targets,
                 weights=self.model.prototypes,
-                target_dis=self.model.all_concepts
+                weights_tgt=self.model.all_concepts
             )
             self.log('train_loss', train_loss, on_step=True)
             self.log('cross_entropy_loss', xe_loss, on_step=True)

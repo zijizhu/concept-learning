@@ -17,6 +17,7 @@ pip install git+https://github.com/openai/CLIP.git
 To encode concepts, for example:
 ```bash
 python prepare_concepts.py \
+--normalize \
 --dataset CUB_200_2011 \
 --output_dir concepts/CUB_200_2011/LCDA \
 --concept_path concepts/CUB_200_2011/LCDA/concepts.txt

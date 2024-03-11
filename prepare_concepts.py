@@ -13,7 +13,7 @@ dataset2prompt_prefix = {'CUB_200_2011': 'The bird has '}
 
 @torch.inference_mode()
 def encode_concepts(model, texts: list[str], prompt_prefix: str,
-                    output_dir: str, batch_size: int, rescale=True, device='cpu'):
+                    batch_size: int, normalize=True, device='cpu'):
     encoded = []   # Matrix T
 
     num_batches = len(texts) // batch_size + 1
@@ -24,7 +24,7 @@ def encode_concepts(model, texts: list[str], prompt_prefix: str,
 
     encoded = torch.cat(encoded).detach().cpu()
     # Rescale each row to a unit vector
-    if rescale:
+    if normalize:
         encoded /= encoded.norm(p=2, dim=-1, keepdim=True)
 
     return encoded
@@ -35,6 +35,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str)
     parser.add_argument('--output_dir', type=str)
     parser.add_argument('--concept_path', type=str)
+    parser.add_argument('--normalize', action='store_true')
 
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--backbone', default='RN50', type=str)
@@ -67,7 +68,11 @@ if __name__ == '__main__':
     encoded = encode_concepts(encoder,
                               concept_texts,
                               dataset2prompt_prefix[args.dataset],
-                              args.output_dir,
                               args.batch_size,
+                              normalize=args.normalize,
                               device=args.device)
-    torch.save(encoded, os.path.join(args.output_dir, f'concepts_{args.model}_{args.backbone}.pt'))
+    if args.normalize:
+        fname = f'concepts_{args.model}_{args.backbone}_normalized.pt'
+    else:
+        fname = f'concepts_{args.model}_{args.backbone}.pt'
+    torch.save(encoded, os.path.join(args.output_dir, fname))

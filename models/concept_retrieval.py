@@ -54,6 +54,42 @@ class MahalanobisCriterion(nn.Module):
         return xe_loss + torch.abs(mahalanobis_loss_scaled), xe_loss, mahalanobis_loss_scaled
 
 
+def mmd(x, y, sigma):
+    # Implementation from https://torchdrift.org/notebooks/note_on_mmd.html
+    # compare kernel MMD paper and code:
+    # A. Gretton et al.: A kernel two-sample test, JMLR 13 (2012)
+    # http://www.gatsby.ucl.ac.uk/~gretton/mmd/mmd.htm
+    # x shape [n, d] y shape [m, d]
+    # n_perm number of bootstrap permutations to get p-value, pass none to not get p-value
+    n, d = x.shape
+    m, d2 = y.shape
+    assert d == d2
+    xy = torch.cat([x.detach(), y.detach()], dim=0)
+    dists = torch.cdist(xy, xy, p=2.0)
+    # we are a bit sloppy here as we just keep the diagonal and everything twice
+    # note that sigma should be squared in the RBF to match the Gretton et al heuristic
+    k = torch.exp((-1/(2*sigma**2)) * dists**2) + torch.eye(n+m)*1e-5
+    k_x = k[:n, :n]
+    k_y = k[n:, n:]
+    k_xy = k[:n, n:]
+    # The diagonals are always 1 (up to numerical error, this is (3) in Gretton et al.)
+    # note that their code uses the biased (and differently scaled mmd)
+    mmd = k_x.sum() / (n * (n - 1)) + k_y.sum() / (m * (m - 1)) - 2 * k_xy.sum() / (n * m)
+    return mmd
+
+class MMDCriterion(nn.Module):
+    def __init__(self, mmd_coef) -> None:
+        super(MMDCriterion, self).__init__()
+        self.cross_entropy = nn.CrossEntropyLoss()
+        self.mmd_coef = mmd_coef
+    
+    def forward(self, preds, tgts, weights, weights_tgt):
+        assert weights.shape[-1] == weights_tgt.shape[-1]
+        dists = torch.pdist(torch.cat([weights, weights_tgt], dim=0))
+        sigma = dists.median()/2
+        return self.cross_entropy(preds, tgts) + self.mmd_coef * mmd(weights, weights_tgt, sigma)
+
+
 class ConceptRetrievalModel(nn.Module):
     def __init__(self, concepts_encoded, k, num_classes, retrieval_algo: str = 'hungarian') -> None:
         super(ConceptRetrievalModel, self).__init__()
