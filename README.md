@@ -20,13 +20,14 @@ python prepare_concepts.py \
 --normalize \
 --dataset CUB_200_2011 \
 --output_dir concepts/CUB_200_2011/LCDA \
---concept_path concepts/CUB_200_2011/LCDA/concepts.txt
+--concept_path concepts/CUB_200_2011/LCDA/concepts.txt\
+--device cuda
 ```
 
 ## Training
 ```bash
 python train.py \
 --dataset_dir data/CUB_200_2011 \
---concepts_path concepts/CUB_200_2011/LCDA/concepts_clip_RN50.pt \
+--concepts_encoded_path concepts/CUB_200_2011/LCDA/concepts_clip_RN50.pt \
 --num_concepts 32
 ```
