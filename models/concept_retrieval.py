@@ -78,13 +78,20 @@ def mmd(x, y, sigma):
     return mmd
 
 class MMDCriterion(nn.Module):
-    def __init__(self, mmd_coef) -> None:
+    def __init__(self, mmd_coef: float=100) -> None:
         super(MMDCriterion, self).__init__()
         self.cross_entropy = nn.CrossEntropyLoss()
         self.mmd_coef = mmd_coef
     
-    def forward(self, preds, tgts, weights, weights_tgt):
+    def forward(
+            self,
+            preds: torch.Tensor,
+            tgts: torch.Tensor,
+            weights: torch.Tensor,
+            weights_tgt: torch.Tensor):
+        '''Assume weights_tgt is already normalized'''
         assert weights.shape[-1] == weights_tgt.shape[-1]
+        weights /= weights.norm(p=2, dim=-1, keepdim=True)
         dists = torch.pdist(torch.cat([weights, weights_tgt], dim=0))
         sigma = dists.median()/2
         return self.cross_entropy(preds, tgts) + self.mmd_coef * mmd(weights, weights_tgt, sigma)

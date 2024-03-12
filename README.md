@@ -25,5 +25,8 @@ python prepare_concepts.py \
 
 ## Training
 ```bash
-python train.py --dataset_dir data/CUB_200_2011 --concepts_path concepts/CUB_200_2011/LCDA/concepts_clip_RN50.pt
+python train.py \
+--dataset_dir data/CUB_200_2011 \
+--concepts_path concepts/CUB_200_2011/LCDA/concepts_clip_RN50.pt \
+--num_concepts 32
 ```

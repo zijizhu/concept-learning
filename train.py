@@ -6,23 +6,26 @@ import numpy as np
 from torch import nn
 from torch.utils.data import DataLoader
 from lightning import Trainer, seed_everything
+from lightning.pytorch.loggers import CSVLogger
 
 from engine import Engine
 from dataset.cub_dataset import CUBDataset
-from models.concept_retrieval import (ConceptRetrievalModel,
-                                      MahalanobisCriterion, MMDCriterion)
+from models.concept_retrieval import (ConceptRetrievalModel, MMDCriterion)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_dir', type=str)
-    parser.add_argument('--concepts_path', type=str)
+    parser.add_argument('--dataset_dir', type=str, required=True)
+    parser.add_argument('--concepts_encoded_path', type=str, required=True)
+    parser.add_argument('--concepts_text_path', type=str, default=None)
+
+
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--lr', default=1e-2, type=float)
     parser.add_argument('--device', default='cuda', type=str)
     parser.add_argument('--batch_size', default=4096, type=int)
-    parser.add_argument('--stage_one_epochs', default=100, type=int)
-    parser.add_argument('--stage_two_epochs', default=100, type=int)
+    parser.add_argument('--stage_one_epochs', default=20, type=int)
+    parser.add_argument('--stage_two_epochs', default=20, type=int)
     parser.add_argument('--backbone', type=str, choices=['RN50'], default='RN50')
     parser.add_argument('--retrieval_algo', type=str, choices=['greedy', 'hungarian'], default='hungarian')
 
@@ -30,7 +33,8 @@ if __name__ == '__main__':
     parser.add_argument('--mmd_coef', default=100, type=float)
 
     args = parser.parse_args()
-    print(args)
+    logger = CSVLogger("logs", name="my_exp_name")
+    logger.log_hyperparams(args)
 
     # Set seeds
     seed_everything(args.seed)
@@ -70,21 +74,25 @@ if __name__ == '__main__':
     stage1_trainer = Trainer(max_epochs=args.stage_one_epochs,
                              min_epochs=10,
                              log_every_n_steps=1,
-                             accelerator=args.device)
+                             accelerator=args.device,
+                             logger=logger)
     
     stage1_trainer.fit(model=engine,
                        train_dataloaders=train_dataloader,
                        val_dataloaders=test_dataloader)
     
     # Retrieve concepts after stage 1 training
-    model.match_concepts()
+    concept_idxs = model.match_concepts()
+    torch.save({k: v.detach().cpu() for k, v in model.state_dict().items()}, 'checkpoints/model.pt')
+    
     
     # Stage 2 training
     print('Stage 2 training:')
     stage2_trainer = Trainer(max_epochs=args.stage_one_epochs,
                              min_epochs=10,
                              log_every_n_steps=1,
-                             accelerator=args.device)
+                             accelerator=args.device,
+                             logger=logger)
 
     stage2_trainer.fit(model=engine,
                        train_dataloaders=train_dataloader,
