@@ -68,7 +68,7 @@ def mmd(x, y, sigma):
     dists = torch.cdist(xy, xy, p=2.0)
     # we are a bit sloppy here as we just keep the diagonal and everything twice
     # note that sigma should be squared in the RBF to match the Gretton et al heuristic
-    k = torch.exp((-1/(2*sigma**2)) * dists**2) + torch.eye(n+m)*1e-5
+    k = torch.exp((-1/(2*sigma**2)) * dists**2) + (torch.eye(n+m)*1e-5).to(x.device)
     k_x = k[:n, :n]
     k_y = k[n:, n:]
     k_xy = k[:n, n:]
