@@ -91,10 +91,10 @@ class MMDCriterion(nn.Module):
             weights_tgt: torch.Tensor):
         '''Assume weights_tgt is already normalized'''
         assert weights.shape[-1] == weights_tgt.shape[-1]
-        weights /= weights.norm(p=2, dim=-1, keepdim=True)
-        dists = torch.pdist(torch.cat([weights, weights_tgt], dim=0))
+        weights_norm = weights.norm(p=2, dim=-1, keepdim=True)
+        dists = torch.pdist(torch.cat([weights_norm, weights_tgt], dim=0))
         sigma = dists.median()/2
-        return self.cross_entropy(preds, tgts) + self.mmd_coef * mmd(weights, weights_tgt, sigma)
+        return self.cross_entropy(preds, tgts) + self.mmd_coef * mmd(weights_norm, weights_tgt, sigma)
 
 
 class ConceptRetrievalModel(nn.Module):
