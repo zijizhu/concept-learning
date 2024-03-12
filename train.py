@@ -35,6 +35,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     logger = CSVLogger("logs", name="my_exp_name")
     logger.log_hyperparams(args)
+    print(args)
 
     # Set seeds
     seed_everything(args.seed)
@@ -48,7 +49,7 @@ if __name__ == '__main__':
     test_dataset = CUBDataset(args.dataset_dir, split='test', transforms=clip_preprocess)
     test_dataloader = DataLoader(test_dataset, args.batch_size, shuffle=False)
 
-    concepts_encoded = torch.load(args.concepts_path).to(torch.float32)
+    concepts_encoded = torch.load(args.concepts_encoded_path).to(torch.float32)
 
     # Number of concepts and classes
     if not args.num_concepts:
