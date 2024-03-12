@@ -94,7 +94,9 @@ class MMDCriterion(nn.Module):
         weights_norm = weights / weights.norm(p=2, dim=-1, keepdim=True)
         dists = torch.pdist(torch.cat([weights_norm, weights_tgt], dim=0))
         sigma = dists.median()/2
-        return self.cross_entropy(preds, tgts) + self.mmd_coef * mmd(weights_norm, weights_tgt, sigma)
+        cross_entropy_loss = self.cross_entropy(preds, tgts)
+        mmd_loss = self.mmd_coef * mmd(weights_norm, weights_tgt, sigma)
+        return cross_entropy_loss + mmd_loss, cross_entropy_loss, mmd_loss
 
 
 class ConceptRetrievalModel(nn.Module):

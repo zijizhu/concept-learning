@@ -29,7 +29,7 @@ class Engine(L.LightningModule):
         concept_logits, class_logits = self.model(samples_encoded)
         
         if self.model.retrieved_concepts is None:
-            train_loss, xe_loss, mhl_loss = self.criterion(
+            train_loss, xe_loss, mmd_loss = self.criterion(
                 preds=class_logits,
                 tgts=targets,
                 weights=self.model.prototypes,
@@ -37,7 +37,7 @@ class Engine(L.LightningModule):
             )
             self.log('train_loss', train_loss, on_step=True)
             self.log('cross_entropy_loss', xe_loss, on_step=True)
-            self.log('mahalanobis_loss', mhl_loss, on_step=True)
+            self.log('mmd_loss', mmd_loss, on_step=True)
         else:
             train_loss = F.cross_entropy(class_logits, targets)
             self.log('train_loss', train_loss, on_step=True)
