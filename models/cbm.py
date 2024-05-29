@@ -3,17 +3,15 @@ from torch import nn
 from torch import optim
 from torchvision.models import inception_v3, Inception_V3_Weights, InceptionOutputs
 
+from .utils import Backbone
+
 
 class CBM(nn.Module):
     def __init__(self, num_concepts: int, num_classes: int,
-                 backbone_name: str = 'inception_v3', activation_name: str = 'Sigmoid'):
+                 backbone: nn.Module, activation_name: str = 'Sigmoid'):
         super().__init__()
         self.num_concepts = num_concepts
-        if backbone_name == 'inception_v3':
-            backbone = inception_v3(weights=Inception_V3_Weights.DEFAULT)
-            self.backbone = torch.nn.Sequential(*list(backbone.children())[:-1])
-        else:
-            raise NotImplementedError
+        self.backbone = backbone
         self.f2c = nn.Linear(2048, num_concepts)
         if activation_name == 'Sigmoid':
             self.activation = nn.Sigmoid()
@@ -23,7 +21,7 @@ class CBM(nn.Module):
 
     def forward(self, batch: dict[str, torch.Tensor]):
         x = batch['pixel_values']
-        x = self.backbone(x)
+        x = self.backbone.forward_features(x)
         if isinstance(x, InceptionOutputs):
             x = x.logits
         c = self.f2c(x)
@@ -78,6 +76,7 @@ def load_cbm_for_training(
     lr: float,
     weight_decay: float
 ):
+    backbone = Backbone(backbone_name)
     net = CBM(
         num_concepts=num_concepts,
         num_classes=num_classes,

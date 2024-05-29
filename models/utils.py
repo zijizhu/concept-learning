@@ -2,33 +2,28 @@ import torch
 import torch.nn.functional as f
 from torch import nn
 from torch import optim
-from torchvision.models import inception_v3, Inception_V3_Weights, InceptionOutputs
+import timm
 
 
 class Backbone(nn.Module):
     def __init__(self, name: str, num_classes: int):
         super().__init__()
         if name == 'inception_v3':
-            self.backbone = inception_v3(weights=Inception_V3_Weights.DEFAULT)
+            self.backbone = timm.create_model('inception_v3', pretrained=True, aux_logits=False)
         else:
             raise NotImplementedError
-        self.backbone.fc = nn.Linear(self.backbone.fc.in_features, num_classes)
+        self.fc = nn.Linear(self.backbone.fc.in_features, num_classes)
 
     def forward(self, batch):
         x = batch['pixel_values']
-        y = self.backbone(x)
-        if isinstance(y, InceptionOutputs):
-            y = y.logits
+        x = self.backbone.forward_features(x)
+        x = self.backbone.global_pool(x)
+        x = self.backbone.head_drop(x)
+        y = self.fc(x)
         return {'class_preds': y}
 
-    def state_dict(self, *args, **kwargs):
-        return self.backbone.state_dict()
 
-    def load_state_dict(self, *args, **kwargs):
-        self.backbone.load_state_dict(*args, **kwargs)
-
-
-def loss_fn(outputs: dict[str, torch.Tensor | InceptionOutputs], batch: dict[str, torch.Tensor]):
+def loss_fn(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
     preds = outputs['class_preds']
 
     loss = f.cross_entropy(preds, batch['class_ids'])
