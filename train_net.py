@@ -14,14 +14,17 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
-from data.cub.cub_dataset import CUBDataset, get_transforms_part_discovery, get_transforms_resnet101
+from data.cub.cub_dataset import CUBDataset
+from data.cub.transforms import get_transforms_cbm
+from models.cbm import load_cbm_for_training
+from models.utils import load_backbone_for_finetuning
 
 
 # TODO Move this function to other files
 @torch.no_grad()
 def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-    class_scores, class_ids = outputs["class_scores"], batch["class_ids"]
-    return torch.sum(torch.argmax(class_scores.data, dim=-1) == class_ids.data).item()
+    class_preds, class_ids = outputs["class_preds"], batch["class_ids"]
+    return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
 
 
 def train_epoch(
@@ -89,6 +92,8 @@ def val_epoch(
     writer.add_scalar("Acc/val", epoch_acc, epoch)
     logger.info(f"EPOCH {epoch} Val Acc: {epoch_acc:.4f}")
 
+    return epoch_acc
+
 
 def main():
     parser = argparse.ArgumentParser(description="Training Script")
@@ -146,26 +151,29 @@ def main():
     #################################
 
     if cfg.DATASET.NAME == "CUB":
-        if cfg.DATASET.TRANSFORMS == "resnet101":
-            train_transforms, test_transforms = get_transforms_resnet101()
-        elif cfg.DATASET.TRANSFORMS == "part_discovery":
-            train_transforms, test_transforms = get_transforms_part_discovery()
+        if cfg.DATASET.PREPROCESS == "cbm":
+            train_transforms, test_transforms = get_transforms_cbm()
         else:
             raise NotImplementedError
 
-        num_attrs = cfg.get("DATASET.NUM_ATTRS", 312)
+        num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
+        groups = cfg.get("DATASET.GROUPS", "attributes")
+        use_attrs = cfg.get("DATASET.USE_ATTRS", "binary")
+        num_classes = 200
         dataset_train = CUBDataset(
             os.path.join(cfg.DATASET.ROOT_DIR, "CUB"),
+            use_attrs=use_attrs,
             num_attrs=num_attrs,
             split="train",
-            groups=cfg.DATASET.GROUPS,
+            groups=groups,
             transforms=train_transforms,
         )
         dataset_val = CUBDataset(
             os.path.join(cfg.DATASET.ROOT_DIR, "CUB"),
+            use_attrs=use_attrs,
             num_attrs=num_attrs,
             split="val",
-            groups=cfg.DATASET.GROUPS,
+            groups=groups,
             transforms=test_transforms,
         )
         dataloader_train = DataLoader(
@@ -180,18 +188,33 @@ def main():
             shuffle=True,
             num_workers=8
         )
-    elif cfg.DATASET.NAME == "CARS":
-        raise NotImplementedError
     else:
         raise NotImplementedError
 
     ##############################
     # Load models and optimizers #
     ##############################
+    if cfg.MODEL.NAME == "CBM":
+        net, loss_fn, optimizer, scheduler = load_cbm_for_training(
+            backbone_name=cfg.MODEL.BACKBONE.NAME,
+            num_classes=num_classes,
+            num_concepts=num_attrs,
+            loss_coef_dict=dict(cfg.MODEL.LOSSES),
+            lr=cfg.OPTIM.LR,
+            weight_decay=cfg.OPTIM.WEIGHT_DECAY
+        )
+        losses = list(name.lower() for name in cfg.MODEL.LOSSES)
+    elif "backbone" in experiment_name:
+        net, loss_fn, optimizer, scheduler = load_backbone_for_finetuning(
+            backbone_name=cfg.MODEL.NAME,
+            num_classes=num_classes,
+            lr=cfg.OPTIM.LR,
+            weight_decay=cfg.OPTIM.WEIGHT_DECAY
 
-    # TODO
-    losses = ...
-    net, loss_fn, optimizer, scheduler = ...
+        )
+        losses = ['l_total']
+    else:
+        raise NotImplementedError
 
     #################
     # Training loop #
@@ -200,6 +223,7 @@ def main():
     logger.info("Start training...")
     net.to(device)
     net.train()
+    best_epoch, best_val_acc = 0, 0.
     for epoch in range(cfg.OPTIM.EPOCHS):
         train_epoch(
             model=net,
@@ -216,7 +240,7 @@ def main():
             logger=logger,
         )
 
-        val_epoch(
+        val_acc = val_epoch(
             model=net,
             num_corrects_fn=compute_corrects,
             dataloader=dataloader_val,
@@ -226,14 +250,23 @@ def main():
             epoch=epoch,
             logger=logger,
         )
-
-        torch.save(
-            {k: v.cpu() for k, v in net.state_dict().items()},
-            os.path.join(log_dir, f"{experiment_name}.pt"),
-        )
-
         if scheduler:
             scheduler.step()
+
+        # Early stopping based on validation accuracy
+        if val_acc > best_val_acc:
+            torch.save(
+                {k: v.cpu() for k, v in net.state_dict().items()},
+                os.path.join(log_dir, f"{experiment_name}.pt"),
+            )
+            best_val_acc = val_acc
+            best_epoch = epoch
+        if epoch >= best_epoch + 10:
+            break
+
+    print()
+    logger.info(f"Best epoch is {best_epoch}")
+    logger.info(f"Best validation accuracy is {best_val_acc}")
     logger.info("DONE!")
 
 

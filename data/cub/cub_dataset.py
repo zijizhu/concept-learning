@@ -17,7 +17,7 @@ class CUBDataset(Dataset):
     def __init__(
             self,
             dataset_dir: str,
-            use_attr: str = "binary",
+            use_attrs: str = "binary",
             num_attrs: int = 112,
             split: str = "train",
             groups: str = "attributes",
@@ -90,8 +90,8 @@ class CUBDataset(Dataset):
         self.attributes_df = attr_df.reset_index(drop=True)
 
         # Load attribute vectors
-        assert use_attr in ["binary", "continuous", "cem"]
-        if use_attr == "cem":
+        assert use_attrs in ["binary", "continuous", "cem"]
+        if use_attrs == "cem":
             attr_vectors = np.loadtxt(
                 os.path.join(
                     os.path.dirname(__file__),
@@ -113,10 +113,10 @@ class CUBDataset(Dataset):
                 attr_vectors = attr_vectors[:, SELECTED_CONCEPTS]
                 attr_vectors /= 100
 
-            if use_attr == "binary":
+            if use_attrs == "binary":
                 attr_vectors = np.where(attr_vectors >= 0.5, 1, 0)
 
-        self.use_attributes = use_attr
+        self.use_attributes = use_attrs
         self.attributes_vectors = attr_vectors
 
         #####################################################
@@ -232,50 +232,3 @@ class CUBDataset(Dataset):
             "class_ids": torch.tensor(class_id, dtype=torch.long),
             "attr_scores": attr_scores.clone(),
         }
-
-
-def get_transforms_part_discovery(resolution: int = 448):
-    """A set of transforms used in https://github.com/robertdvdk/part_detection"""
-    train_transforms = t.Compose(
-        [
-            t.Resize(size=resolution, antialias=True),
-            t.RandomHorizontalFlip(),
-            t.ColorJitter(0.1),
-            t.RandomAffine(degrees=90, translate=(0.2, 0.2), scale=(0.8, 1.2)),
-            t.RandomCrop(resolution),
-            t.ToTensor(),
-        ]
-    )
-    test_transforms = t.Compose(
-        [
-            t.Resize(size=resolution, antialias=True),
-            t.CenterCrop(size=resolution),
-            t.ToTensor(),
-        ]
-    )
-
-    return train_transforms, test_transforms
-
-
-def get_transforms_resnet101():
-    """A set of transforms for standard resnet101 training from torchvision, reference:
-    https://pytorch.org/vision/main/models/generated/torchvision.models.resnet101.html"""
-    train_transforms = t.Compose(
-        [
-            t.Resize(size=232, interpolation=t.InterpolationMode.BILINEAR),
-            t.CenterCrop(size=224),
-            t.ToTensor(),
-            t.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-
-    test_transforms = t.Compose(
-        [
-            t.Resize(size=232, interpolation=t.InterpolationMode.BILINEAR),
-            t.CenterCrop(size=224),
-            t.ToTensor(),
-            t.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-
-    return train_transforms, test_transforms
