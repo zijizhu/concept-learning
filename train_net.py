@@ -151,7 +151,7 @@ def main():
     #################################
 
     if cfg.DATASET.NAME == "CUB":
-        if cfg.DATASET.PREPROCESS == "cbm":
+        if cfg.DATASET.PREPROCESS == "CBM":
             train_transforms, test_transforms = get_transforms_cbm()
         else:
             raise NotImplementedError

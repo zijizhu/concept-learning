@@ -4,6 +4,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import torch
@@ -14,9 +15,12 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
-from data.cub.cub_dataset import CUBDataset, get_transforms_part_discovery, get_transforms_resnet101
+from data.cub.cub_dataset import CUBDataset
+from data.cub.transforms import get_transforms_cbm
+from models.utils import Backbone
 
 
+# TODO
 def test_interventions(model: nn.Module, dataset_test: CUBDataset, num_groups_to_intervene: list[int],
                        rng: np.random.Generator, logger: logging.Logger, writer: SummaryWriter):
     """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
@@ -37,6 +41,35 @@ def test_interventions(model: nn.Module, dataset_test: CUBDataset, num_groups_to
 
         # Save rng data
         np.savez(...)
+
+
+@torch.no_grad()
+def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
+    class_preds, class_ids = outputs["class_preds"], batch["class_ids"]
+    return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
+
+
+@torch.no_grad()
+def test_accuracy(
+    model: nn.Module,
+    num_corrects_fn: nn.Module | Callable,
+    dataloader: DataLoader,
+    dataset_size: int,
+    device: torch.device,
+    logger: logging.Logger,
+):
+    running_corrects = 0
+
+    for batch_inputs in tqdm(dataloader):
+        batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
+        outputs = model(batch_inputs)
+
+        running_corrects += num_corrects_fn(outputs, batch_inputs)
+
+    epoch_acc = running_corrects / dataset_size
+    logger.info(f"Test Acc: {epoch_acc:.4f}")
+
+    return epoch_acc
 
 
 def main():
@@ -94,21 +127,25 @@ def main():
     #################################
 
     if cfg.DATASET.NAME == "CUB":
-        if cfg.DATASET.TRANSFORMS == "resnet101":
-            train_transforms, test_transforms = get_transforms_resnet101()
-        elif cfg.DATASET.TRANSFORMS == "part_discovery":
-            train_transforms, test_transforms = get_transforms_part_discovery()
+        if cfg.DATASET.PREPROCESS == "CBM":
+            _, test_transforms = get_transforms_cbm()
         else:
             raise NotImplementedError
 
+        num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
+        groups = cfg.get("DATASET.GROUPS", "attributes")
+        use_attrs = cfg.get("DATASET.USE_ATTRS", "binary")
+        num_classes = 200
+
         dataset_test = CUBDataset(
             os.path.join(cfg.DATASET.ROOT_DIR, "CUB"),
-            use_attr=cfg.DATASET.USE_ATTR,
-            num_attrs=cfg.DATASET.NUM_ATTRS,
-            split="test",
-            groups=cfg.DATASET.GROUPS,
+            use_attrs=use_attrs,
+            num_attrs=num_attrs,
+            split="train",
+            groups=groups,
             transforms=test_transforms,
         )
+        dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=4)
     elif cfg.DATASET.NAME == "CELEB":
         raise NotImplementedError
     else:
@@ -117,8 +154,14 @@ def main():
     ###############
     # Load models #
     ###############
-
-    net = ...
+    if "CBM" in experiment_name:
+        raise NotImplementedError
+    elif "backbone" in experiment_name:
+        net = Backbone(name=cfg.MODEL.NAME, num_classes=num_classes)
+        state_dict = torch.load(cfg.MODEL.CKPT_PATH, map_location=device)
+        net.load_state_dict(state_dict)
+    else:
+        raise NotImplementedError
 
     ###############
     # Evaluations #
@@ -126,6 +169,14 @@ def main():
 
     net.to(device)
     net.eval()
+
+    # Test Accuracy
+    logger.info("Start task accuracy evaluation...")
+    test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
+    if "backbone" in experiment_name:
+        logger.info("DONE!")
+        exit(0)
+
     # TODO Test Intervention
     logger.info("Start intervention evaluation...")
     num_groups_to_intervene = [0, 4, 8, 12, 16, 20, 24, 28]

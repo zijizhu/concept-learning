@@ -24,6 +24,9 @@ class Backbone(nn.Module):
     def state_dict(self, *args, **kwargs):
         return self.backbone.state_dict()
 
+    def load_state_dict(self, *args, **kwargs):
+        self.backbone.load_state_dict(*args, **kwargs)
+
 
 def loss_fn(outputs: dict[str, torch.Tensor | InceptionOutputs], batch: dict[str, torch.Tensor]):
     preds = outputs['class_preds']

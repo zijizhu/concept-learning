@@ -9,7 +9,7 @@ DATASET:
   NAME: "CUB"
   NUM_ATTRS: 112
   ROOT_DIR: "datasets"
-  PREPROCESS: "cbm"
+  PREPROCESS: "CBM"
 OPTIM:
   LR: 1e-3
   EPOCHS: 20
