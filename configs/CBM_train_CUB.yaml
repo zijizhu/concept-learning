@@ -1,20 +1,22 @@
 MODEL:
+  NAME: "CBM"
   BACKBONE:
     NAME: "inception_v3"
-    CKPT_PATH: ""
+    CKPT_PATH: "checkpoints/inception_v3_ft_CUB.pt"
   LOSSES:
     L_C: 0.01
     L_Y: 1
 DATASET:
   NAME: "CUB"
+  USE_ATTRS: "binary"
   NUM_ATTRS: 112
   ROOT_DIR: "datasets"
   PREPROCESS: "CBM"
 OPTIM:
   LR: 1e-3
-  EPOCHS: 20
+  EPOCHS: 200
   BATCH_SIZE: 64
-  STEP_SIZE: 15
+  STEP_SIZE: 50
   GAMMA: 0.5
   WEIGHT_DECAY: 0.0004
 SEED: 42

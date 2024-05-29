@@ -197,9 +197,10 @@ def main():
     if cfg.MODEL.NAME == "CBM":
         net, loss_fn, optimizer, scheduler = load_cbm_for_training(
             backbone_name=cfg.MODEL.BACKBONE.NAME,
+            checkpoint_path=cfg.MODEL.BACKBONE.CKPT_PATH,
             num_classes=num_classes,
             num_concepts=num_attrs,
-            loss_coef_dict=dict(cfg.MODEL.LOSSES),
+            loss_coef_dict={k.lower(): float(v) for k, v in dict(cfg.MODEL.LOSSES).items()},
             lr=cfg.OPTIM.LR,
             weight_decay=cfg.OPTIM.WEIGHT_DECAY
         )
