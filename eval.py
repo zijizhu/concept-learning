@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+import timm
 import numpy as np
 import torch
 from lightning import seed_everything
@@ -18,6 +19,7 @@ from tqdm import tqdm
 from data.cub.cub_dataset import CUBDataset
 from data.cub.transforms import get_transforms_cbm
 from models.utils import Backbone
+from models.cbm import CBM
 
 
 # TODO
@@ -155,7 +157,10 @@ def main():
     # Load models #
     ###############
     if "CBM" in experiment_name:
-        raise NotImplementedError
+        backbone = timm.create_model(cfg.MODEL.BACKBONE.NAME, pretrained=True, aux_logits=False)
+        net = CBM(backbone=backbone, num_concepts=num_attrs, num_classes=num_classes)
+        state_dict = torch.load(cfg.MODEL.CKPT_PATH, map_location=device)
+        net.load_state_dict(state_dict)
     elif "backbone" in experiment_name:
         net = Backbone(name=cfg.MODEL.NAME, num_classes=num_classes)
         state_dict = torch.load(cfg.MODEL.CKPT_PATH, map_location=device)

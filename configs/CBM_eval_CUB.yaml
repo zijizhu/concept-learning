@@ -1,0 +1,12 @@
+MODEL:
+  NAME: "CBM"
+  CKPT_PATH: "checkpoints/CBM_CUB.pt"
+  BACKBONE:
+    NAME: "inception_v3"
+DATASET:
+  NAME: "CUB"
+  USE_ATTRS: "binary"
+  NUM_ATTRS: 112
+  ROOT_DIR: "datasets"
+  PREPROCESS: "CBM"
+SEED: 42
