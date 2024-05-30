@@ -31,13 +31,17 @@ class CBM(nn.Module):
     def inference(self, batch: dict[str, torch.Tensor], int_mask: torch.Tensor | None = None,
                   int_values: torch.Tensor | None = None):
         x = batch['pixel_values']
-        x = self.backbone(x)
-        c = self.f2c(x)
-        c = self.activation(c)
+        x = self.backbone.forward_features(x)
+        x = self.backbone.global_pool(x)
+        f = self.backbone.head_drop(x)
+        c = self.f2c(f)
+
         if int_mask is not None:
             assert isinstance(int_mask, torch.Tensor) and isinstance(int_values, torch.Tensor)
             c = int_mask * int_values + (1 - int_mask) * c
+
         y = self.c2y(c)
+
         return {
             "concept_preds": c,
             "class_preds": y
