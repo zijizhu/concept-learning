@@ -28,7 +28,7 @@ def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Te
 
 
 # TODO
-def test_interventions(model: nn.Module, dataset_test: DataLoader, num_groups_to_intervene: list[int],
+def test_interventions(model: nn.Module, dataset_test: CUBDataset, num_groups_to_intervene: list[int],
                        num_corrects_fn: Callable, dataset_size: int,
                        rng: np.random.Generator, logger: logging.Logger, writer: SummaryWriter, device: torch.device):
     """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
@@ -39,7 +39,6 @@ def test_interventions(model: nn.Module, dataset_test: DataLoader, num_groups_to
             np.arange(len(dataset_test.group_names)),
             size=(len(dataset_test), num_groups)
         )
-        preds, labels = [], []
         running_corrects = 0
         # Inference loop
         for test_inputs, group_ids_to_intervene in tqdm(zip(dataloader_test, sampled_group_ids), total=len(dataloader_test)):
@@ -198,7 +197,7 @@ def main():
     # TODO Test Intervention
     logger.info("Start intervention evaluation...")
     num_groups_to_intervene = [0, 4, 8, 12, 16, 20, 24, 28]
-    test_interventions(model=net, dataset_test=dataloader_test, num_groups_to_intervene=num_groups_to_intervene,
+    test_interventions(model=net, dataset_test=dataset_test, num_groups_to_intervene=num_groups_to_intervene,
                        num_corrects_fn=compute_corrects, dataset_size=len(dataset_test), logger=logger,
                        writer=summary_writer, device=device, rng=rng)
 
