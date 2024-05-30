@@ -21,10 +21,16 @@ from data.cub.transforms import get_transforms_cbm
 from models.utils import Backbone
 from models.cbm import CBM
 
+@torch.no_grad()
+def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
+    class_preds, class_ids = outputs["class_preds"], batch["class_ids"]
+    return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
+
 
 # TODO
-def test_interventions(model: nn.Module, dataset_test: CUBDataset, num_groups_to_intervene: list[int],
-                       rng: np.random.Generator, logger: logging.Logger, writer: SummaryWriter):
+def test_interventions(model: nn.Module, dataset_test: DataLoader, num_groups_to_intervene: list[int],
+                       num_corrects_fn: Callable, dataset_size: int,
+                       rng: np.random.Generator, logger: logging.Logger, writer: SummaryWriter, device: torch.device):
     """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
     dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=4)
 
@@ -34,15 +40,22 @@ def test_interventions(model: nn.Module, dataset_test: CUBDataset, num_groups_to
             size=(len(dataset_test), num_groups)
         )
         preds, labels = [], []
+        running_corrects = 0
         # Inference loop
-        for test_example, group_ids_to_intervene in zip(dataloader_test, sampled_group_ids):
+        for test_inputs, group_ids_to_intervene in tqdm(zip(dataloader_test, sampled_group_ids), total=len(dataloader_test)):
             intervention_mask = np.isin(dataset_test.attribute_group_indices, group_ids_to_intervene)
-            result = model.inference(test_example, intervention_mask=intervention_mask)
+            intervention_mask = torch.tensor(intervention_mask.astype(int), device=device)
+            test_inputs = {k: v.to(device) for k, v in test_inputs.items()}
+            results = model.inference(test_inputs, int_mask=intervention_mask, int_values=test_inputs["attr_scores"])
+
+            running_corrects += num_corrects_fn(results, test_inputs)
 
         # Compute accuracy
 
-        # Save rng data
-        np.savez(...)
+        acc = running_corrects / dataset_size
+        writer.add_scalar("Acc/train", acc, num_groups)
+        logger.info(f"Test Acc: {acc:.4f}")
+
 
 
 @torch.no_grad()
@@ -143,7 +156,7 @@ def main():
             os.path.join(cfg.DATASET.ROOT_DIR, "CUB"),
             use_attrs=use_attrs,
             num_attrs=num_attrs,
-            split="train",
+            split="test",
             groups=groups,
             transforms=test_transforms,
         )
@@ -185,6 +198,9 @@ def main():
     # TODO Test Intervention
     logger.info("Start intervention evaluation...")
     num_groups_to_intervene = [0, 4, 8, 12, 16, 20, 24, 28]
+    test_interventions(model=net, dataset_test=dataloader_test, num_groups_to_intervene=num_groups_to_intervene,
+                       num_corrects_fn=compute_corrects, dataset_size=len(dataset_test), logger=logger,
+                       writer=summary_writer, device=device, rng=rng)
 
     # TODO Test Representation
 
