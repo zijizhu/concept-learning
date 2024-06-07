@@ -47,14 +47,19 @@ class DevModel(nn.Module):
 
 
 class DevLoss(nn.Module):
-    def __init__(self, attribute_weights: torch.Tensor, **kwargs):
+    def __init__(self, attribute_weights: torch.Tensor, sigmoid: bool = False, **kwargs):
         super().__init__()
         self.l_y_coef = kwargs["l_y"]  # type: float
         self.l_c_coef = kwargs["l_c"]  # type: float
         self.l_cpt_coef = kwargs["l_cpt"]  # type: float
 
         self.l_y = nn.CrossEntropyLoss()
-        self.l_c = nn.BCEWithLogitsLoss(weight=attribute_weights.to(device=kwargs["device"]))
+        if sigmoid:
+            print("Using normal BCE")
+            self.l_c = nn.BCELoss(weight=attribute_weights.to(device=kwargs["device"]))
+        else:
+            self.l_c = nn.BCEWithLogitsLoss(weight=attribute_weights.to(device=kwargs["device"]))
+
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
         loss_dict = {

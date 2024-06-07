@@ -198,7 +198,8 @@ def main():
     net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes, activation=cfg.MODEL.ACTIVATION)
 
     loss_coef_dict = {k.lower(): v for k, v in dict(cfg.MODEL.LOSSES).items()}
-    criterion = DevLoss(torch.tensor(dataset_train.attribute_weights), device=device, **loss_coef_dict)
+    criterion = DevLoss(torch.tensor(dataset_train.attribute_weights), sigmoid=(cfg.MODEL.ACTIVATION == "sigmoid"),
+                        device=device, **loss_coef_dict)
 
     optimizer = optim.AdamW(params=[
         {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR_BACKBONE},
