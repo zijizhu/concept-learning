@@ -179,9 +179,10 @@ def main():
     else:
         raise NotImplementedError
 
-    #################################
-    # Load and fine-tune full model #
-    #################################
+    ###############################
+    # Load and fine-tune backbone #
+    ###############################
+
     if cfg.MODEL.BACKBONE == 'resnet101':
         from torchvision.models import resnet101, ResNet101_Weights
         backbone = resnet101(weights=ResNet101_Weights.DEFAULT)
@@ -190,6 +191,43 @@ def main():
         backbone = resnet50(weights=ResNet50_Weights.DEFAULT)
     else:
         raise NotImplementedError
+    backbone.fc = nn.Linear(backbone.fc.in_features, num_classes)
+    optimizer = optim.Adam(backbone.parameters(), lr=cfg.OPTIM.LR_BACKBONE)
+
+    def criterion(outputs, batch_inputs):
+        loss = f.cross_entropy(outputs, batch_inputs["class_ids"])
+        return {'l_y': loss}, loss
+
+    logger.info("Start tuning backbone...")
+    backbone.to(device)
+    backbone.train()
+    best_epoch, best_val_acc = 0, 0.
+    for epoch in range(cfg.OPTIM.EPOCHS):
+        train_epoch(model=backbone, loss_fn=criterion, loss_keys=['l_y'], num_corrects_fn=compute_corrects,
+                    dataloader=dataloader_train, optimizer=optimizer, writer=summary_writer,
+                    batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train), device=device,
+                    epoch=epoch, logger=logger, model_name="backbone")
+
+        val_acc = val_epoch(model=backbone, num_corrects_fn=compute_corrects, dataloader=dataloader_val,
+                            writer=summary_writer, dataset_size=len(dataset_val), device=device,
+                            epoch=epoch, logger=logger, model_name="backbone")
+
+        # Early stopping based on validation accuracy
+        if val_acc > best_val_acc:
+            torch.save({k: v.cpu() for k, v in backbone.state_dict().items()},
+                       Path(log_dir) / f"{cfg.MODEL.BACKBONE}.pt")
+            best_val_acc = val_acc
+            best_epoch = epoch
+        if epoch >= best_epoch + 10:
+            break
+
+    print()
+
+    #################################
+    # Load and fine-tune full model #
+    #################################
+    state_dict = torch.load(Path(log_dir) / f"{cfg.MODEL.BACKBONE}.pt")
+    backbone.load_state_dict(state_dict)
 
     net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes, activation=cfg.MODEL.ACTIVATION)
 
@@ -205,11 +243,19 @@ def main():
     # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg.OPTIM.STEP_SIZE, gamma=cfg.OPTIM.GAMMA)
     scheduler = None  # type: optim.lr_scheduler.StepLR | None
 
+    for param in net.backbone.parameters():
+        param.requires_grad = False
+
+    logger.info("Start training prototypes and classification layers...")
+
     net.to(device)
     net.train()
     best_epoch, best_val_acc = 0, 0.
     prototype_weights = []
     for epoch in range(cfg.OPTIM.EPOCHS):
+        if epoch == 10:
+            for param in net.backbone.parameters():
+                param.requires_grad = False
         train_epoch(model=net, loss_fn=criterion, loss_keys=list(loss_coef_dict.keys()),
                     num_corrects_fn=compute_corrects, dataloader=dataloader_train, optimizer=optimizer,
                     writer=summary_writer, batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train),

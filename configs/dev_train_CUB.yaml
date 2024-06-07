@@ -5,7 +5,7 @@ MODEL:
   LOSSES:
     L_C: 1e-3
     L_Y: 1
-    L_CPT: 1e-6
+    L_CPT: 1e-3
 DATASET:
   NAME: "CUB"
   ROOT_DIR: "datasets"
