@@ -2,51 +2,54 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 import torch
+import torch.nn.functional as f
 from lightning import seed_everything
 from omegaconf import OmegaConf
 from torch import nn
+from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
 from data.cub.transforms import get_transforms_cbm
-from models.cbm import load_cbm_for_training
-from models.utils import load_backbone_for_finetuning
+from models.dev import DevModel, DevLoss
 
 
 # TODO Move this function to other files
 @torch.no_grad()
 def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-    class_preds, class_ids = outputs["class_preds"], batch["class_ids"]
+    if isinstance(outputs, dict):
+        class_preds = outputs["class_scores"]
+    else:
+        class_preds = outputs
+    class_ids = batch["class_ids"]
     return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
 
 
-def train_epoch(
-    model: nn.Module,
-    loss_fn: nn.Module,
-    loss_keys: list[str],
-    num_corrects_fn: nn.Module | Callable,
-    dataloader: DataLoader,
-    optimizer: torch.optim.Optimizer,
-    writer: SummaryWriter,
-    dataset_size: int,
-    epoch: int,
-    batch_size: int,
-    device: torch.device,
-    logger: logging.Logger,
-):
+def train_epoch(model: nn.Module,
+                loss_fn: nn.Module | Callable,
+                loss_keys: list[str],
+                num_corrects_fn: nn.Module | Callable,
+                dataloader: DataLoader,
+                optimizer: torch.optim.Optimizer,
+                writer: SummaryWriter,
+                dataset_size: int,
+                epoch: int,
+                batch_size: int,
+                device: torch.device,
+                logger: logging.Logger,
+                model_name: str):
     running_losses = {k: 0 for k in loss_keys}
     running_corrects = 0
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
-        outputs = model(batch_inputs)
+        outputs = model(batch_inputs["pixel_values"])
         loss_dict, total_loss = loss_fn(outputs, batch_inputs)
 
         total_loss.backward()
@@ -61,36 +64,35 @@ def train_epoch(
     # Log metrics
     for loss_name, loss in running_losses.items():
         loss_avg = loss / dataset_size
-        writer.add_scalar(f"Loss/train/{loss_name}", loss_avg, epoch)
-        logger.info(f"EPOCH {epoch} Train {loss_name}: {loss_avg:.4f}")
+        writer.add_scalar(f"Loss/{model_name}/train/{loss_name}", loss_avg, epoch)
+        logger.info(f"EPOCH {epoch} {model_name} Train {loss_name}: {loss_avg:.4f}")
 
     epoch_acc = running_corrects / dataset_size
-    writer.add_scalar("Acc/train", epoch_acc, epoch)
-    logger.info(f"EPOCH {epoch} Train Acc: {epoch_acc:.4f}")
+    writer.add_scalar("Acc/{model_name}/train", epoch_acc, epoch)
+    logger.info(f"EPOCH {epoch} {model_name} Train Acc: {epoch_acc:.4f}")
 
 
 @torch.no_grad()
-def val_epoch(
-    model: nn.Module,
-    num_corrects_fn: nn.Module | Callable,
-    dataloader: DataLoader,
-    writer: SummaryWriter,
-    dataset_size: int,
-    epoch: int,
-    device: torch.device,
-    logger: logging.Logger,
-):
+def val_epoch(model: nn.Module,
+              num_corrects_fn: nn.Module | Callable,
+              dataloader: DataLoader,
+              writer: SummaryWriter,
+              dataset_size: int,
+              epoch: int,
+              device: torch.device,
+              logger: logging.Logger,
+              model_name: str):
     running_corrects = 0
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
-        outputs = model(batch_inputs)
+        outputs = model(batch_inputs["pixel_values"])
 
         running_corrects += num_corrects_fn(outputs, batch_inputs)
 
     epoch_acc = running_corrects / dataset_size
-    writer.add_scalar("Acc/val", epoch_acc, epoch)
-    logger.info(f"EPOCH {epoch} Val Acc: {epoch_acc:.4f}")
+    writer.add_scalar(f"Acc/{model_name}/val", epoch_acc, epoch)
+    logger.info(f"EPOCH {epoch} {model_name} Val Acc: {epoch_acc:.4f}")
 
     return epoch_acc
 
@@ -121,19 +123,24 @@ def main():
     #################
     # Setup logging #
     #################
-
-    log_dir = os.path.join("logs", f'{datetime.now().strftime("%Y-%m-%d_%H-%M")}_{experiment_name}')
-    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    log_dir = Path("logs") / "CUB_runs" / f"dev_{cfg.MODEL.LOSSES.L_C}_{cfg.OPTIM.LR}"
+    log_dir.mkdir(parents=True, exist_ok=True)
     with open(os.path.join(log_dir, "hparams.yaml"), "w+") as fp:
         OmegaConf.save(OmegaConf.merge(OmegaConf.create({"NAME": experiment_name}), cfg), f=fp.name)
 
-    summary_writer = SummaryWriter(log_dir=log_dir)
+    summary_writer = SummaryWriter(log_dir=str(log_dir))
     summary_writer.add_text("Model", cfg.MODEL.NAME)
     summary_writer.add_text("Dataset", cfg.DATASET.NAME)
     summary_writer.add_text("Batch size", str(cfg.OPTIM.BATCH_SIZE))
     summary_writer.add_text("Epochs", str(cfg.OPTIM.EPOCHS))
     summary_writer.add_text("Seed", str(cfg.SEED))
-    summary_writer.add_text("Device", str(device))
+
+    summary_writer.add_text("Attribute Loss Coefficient", str(cfg.MODEL.LOSSES.L_C))
+
+    summary_writer.add_text("Main Model Learning Rate", str(cfg.OPTIM.LR))
+    summary_writer.add_text("Backbone Finetuning Learning Rate", str(cfg.OPTIM.LR_BACKBONE))
+    summary_writer.add_text("Weight Decay", str(cfg.OPTIM.WEIGHT_DECAY))
+
 
     logging.basicConfig(
         level=logging.INFO,
@@ -151,124 +158,128 @@ def main():
     #################################
 
     if cfg.DATASET.NAME == "CUB":
-        if cfg.DATASET.PREPROCESS == "CBM":
-            train_transforms, test_transforms = get_transforms_cbm()
-        else:
-            raise NotImplementedError
+        train_transforms, test_transforms = get_transforms_cbm()
 
         num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
-        groups = cfg.get("DATASET.GROUPS", "attributes")
-        use_attrs = cfg.get("DATASET.USE_ATTRS", "binary")
         num_classes = 200
         dataset_train = CUBDataset(
-            os.path.join(cfg.DATASET.ROOT_DIR, "CUB"),
-            use_attrs=use_attrs,
-            num_attrs=num_attrs,
-            split="train",
-            groups=groups,
-            transforms=train_transforms,
-        )
+            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train", use_attrs=cfg.DATASET.USE_ATTRS,
+            use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
+            transforms=train_transforms)
         dataset_val = CUBDataset(
-            os.path.join(cfg.DATASET.ROOT_DIR, "CUB"),
-            use_attrs=use_attrs,
-            num_attrs=num_attrs,
-            split="val",
-            groups=groups,
-            transforms=test_transforms,
-        )
+            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="val", use_attrs=cfg.DATASET.USE_ATTRS,
+            use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
+            transforms=train_transforms)
         dataloader_train = DataLoader(
-            dataset=dataset_train,
-            batch_size=cfg.OPTIM.BATCH_SIZE,
-            shuffle=True,
-            num_workers=8
-        )
+            dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
+            shuffle=True, num_workers=8)
         dataloader_val = DataLoader(
-            dataset=dataset_val,
-            batch_size=cfg.OPTIM.BATCH_SIZE,
-            shuffle=True,
-            num_workers=8
-        )
+            dataset=dataset_val, batch_size=cfg.OPTIM.BATCH_SIZE,
+            shuffle=True, num_workers=8)
     else:
         raise NotImplementedError
 
-    ##############################
-    # Load models and optimizers #
-    ##############################
-    if cfg.MODEL.NAME == "CBM":
-        net, loss_fn, optimizer, scheduler = load_cbm_for_training(
-            backbone_name=cfg.MODEL.BACKBONE.NAME,
-            checkpoint_path=cfg.MODEL.BACKBONE.CKPT_PATH,
-            num_classes=num_classes,
-            num_concepts=num_attrs,
-            loss_coef_dict={k.lower(): float(v) for k, v in dict(cfg.MODEL.LOSSES).items()},
-            lr=cfg.OPTIM.LR,
-            weight_decay=cfg.OPTIM.WEIGHT_DECAY
-        )
-        losses = list(name.lower() for name in cfg.MODEL.LOSSES)
-    elif "backbone" in experiment_name:
-        net, loss_fn, optimizer, scheduler = load_backbone_for_finetuning(
-            backbone_name=cfg.MODEL.NAME,
-            num_classes=num_classes,
-            lr=cfg.OPTIM.LR,
-            weight_decay=cfg.OPTIM.WEIGHT_DECAY
+    ###############################
+    # Load and fine-tune backbone #
+    ###############################
 
-        )
-        losses = ['l_total']
+    if cfg.MODEL.BACKBONE == 'resnet101':
+        from torchvision.models import resnet101, ResNet101_Weights
+        backbone = resnet101(weights=ResNet101_Weights.DEFAULT)
+    elif cfg.MODEL.BACKBONE == 'resnet50':
+        from torchvision.models import resnet50, ResNet50_Weights
+        backbone = resnet50(weights=ResNet50_Weights.DEFAULT)
     else:
         raise NotImplementedError
+    backbone.fc = nn.Linear(backbone.fc.in_features, num_classes)
+    optimizer = optim.Adam(backbone.parameters(), lr=cfg.OPTIM.LR_BACKBONE)
 
-    #################
-    # Training loop #
-    #################
+    def criterion(outputs, batch_inputs):
+        loss = f.cross_entropy(outputs, batch_inputs["class_ids"])
+        return {'l_y': loss}, loss
 
-    logger.info("Start training...")
-    net.to(device)
-    net.train()
+    logger.info("Start tuning backbone...")
+    backbone.to(device)
+    backbone.train()
     best_epoch, best_val_acc = 0, 0.
     for epoch in range(cfg.OPTIM.EPOCHS):
-        train_epoch(
-            model=net,
-            loss_fn=loss_fn,
-            loss_keys=losses,
-            num_corrects_fn=compute_corrects,
-            dataloader=dataloader_train,
-            optimizer=optimizer,
-            writer=summary_writer,
-            batch_size=cfg.OPTIM.BATCH_SIZE,
-            dataset_size=len(dataset_train),
-            device=device,
-            epoch=epoch,
-            logger=logger,
-        )
+        train_epoch(model=backbone, loss_fn=criterion, loss_keys=['l_y'], num_corrects_fn=compute_corrects,
+                    dataloader=dataloader_train, optimizer=optimizer, writer=summary_writer,
+                    batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train), device=device,
+                    epoch=epoch, logger=logger, model_name="backbone")
 
-        val_acc = val_epoch(
-            model=net,
-            num_corrects_fn=compute_corrects,
-            dataloader=dataloader_val,
-            writer=summary_writer,
-            dataset_size=len(dataset_val),
-            device=device,
-            epoch=epoch,
-            logger=logger,
-        )
-        if scheduler:
-            scheduler.step()
+        val_acc = val_epoch(model=backbone, num_corrects_fn=compute_corrects, dataloader=dataloader_val,
+                            writer=summary_writer, dataset_size=len(dataset_val), device=device,
+                            epoch=epoch, logger=logger, model_name="backbone")
 
         # Early stopping based on validation accuracy
         if val_acc > best_val_acc:
-            torch.save(
-                {k: v.cpu() for k, v in net.state_dict().items()},
-                os.path.join(log_dir, f"{experiment_name}.pt"),
-            )
+            torch.save({k: v.cpu() for k, v in backbone.state_dict().items()},
+                       Path(log_dir) / f"{cfg.MODEL.BACKBONE}.pt")
             best_val_acc = val_acc
             best_epoch = epoch
         if epoch >= best_epoch + 10:
             break
 
     print()
-    logger.info(f"Best epoch is {best_epoch}")
-    logger.info(f"Best validation accuracy is {best_val_acc}")
-    logger.info("DONE!")
+
+    #################################
+    # Load and fine-tune full model #
+    #################################
+    # state_dict = torch.load(Path(log_dir) / f"{cfg.MODEL.BACKBONE}.pt")
+    # backbone.load_state_dict(state_dict)
+
+    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes, activation=cfg.MODEL.ACTIVATION)
+
+    loss_coef_dict = {k.lower(): v for k, v in dict(cfg.MODEL.LOSSES).items()}
+    criterion = DevLoss(torch.tensor(dataset_train.attribute_weights), device=device, **loss_coef_dict)
+
+    optimizer = optim.AdamW(params=[
+        {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
+        {"params": net.prototype_conv.parameters()},
+        {"params": net.c2y.parameters()}
+    ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY)
+
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg.OPTIM.STEP_SIZE, gamma=cfg.OPTIM.GAMMA)
+    scheduler = None  # type: optim.lr_scheduler.StepLR | None
+
+    for param in net.backbone.parameters():
+        param.requires_grad = False
+
+    logger.info("Start training prototypes and classification layers...")
+
+    net.to(device)
+    net.train()
+    best_epoch, best_val_acc = 0, 0.
+    prototype_weights = []
+    for epoch in range(cfg.OPTIM.EPOCHS):
+        if epoch == 10:
+            for param in net.backbone.parameters():
+                param.requires_grad = False
+        train_epoch(model=net, loss_fn=criterion, loss_keys=list(loss_coef_dict.keys()),
+                    num_corrects_fn=compute_corrects, dataloader=dataloader_train, optimizer=optimizer,
+                    writer=summary_writer, batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train),
+                    device=device, epoch=epoch, logger=logger, model_name="full model")
+
+        val_acc = val_epoch(model=net, num_corrects_fn=compute_corrects, dataloader=dataloader_val,
+                            writer=summary_writer, dataset_size=len(dataset_val), device=device,
+                            epoch=epoch, logger=logger, model_name="full model")
+        if scheduler:
+            scheduler.step()
+
+        # Early stopping based on validation accuracy
+        if val_acc > best_val_acc:
+            torch.save({k: v.cpu() for k, v in backbone.state_dict().items()},
+                       Path(log_dir) / f"{cfg.MODEL.NAME}.pt")
+            best_val_acc = val_acc
+            best_epoch = epoch
+        if epoch >= best_epoch + 30:
+            break
+
+        # Save prototype weights for inspection
+        prototype_weights.append(net.prototype_conv.weight.detach().cpu())
+
+    torch.save(torch.stack(prototype_weights), Path(log_dir) / "prototype_weights.pt")
 
 
 if __name__ == "__main__":

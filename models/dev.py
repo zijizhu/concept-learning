@@ -2,70 +2,65 @@ import torch
 import torch.nn.functional as f
 from torch import nn, optim
 from torch.optim import lr_scheduler
-from torchvision.models import ResNet, ResNet101_Weights, resnet101
+from torchvision.models import ResNet, ResNet101_Weights, resnet101, ResNet
 
 
 class DevModel(nn.Module):
-    def __init__(self, backbone: nn.Module, num_attrs: int, num_classes: int) -> None:
+    def __init__(self, backbone: ResNet, num_attrs: int, num_classes: int,
+                 activation: str | None = None) -> None:
         super().__init__()
-        if isinstance(backbone, ResNet):
-            self.backbone = torch.nn.Sequential(*list(backbone.children())[:-2])
-            self.dim = backbone.fc.in_features
-        else:
-            raise NotImplementedError
+        self.backbone = torch.nn.Sequential(*list(backbone.children())[:-2])
+        self.dim = backbone.fc.in_features
         self.num_attrs, self.num_classes = num_attrs, num_classes
 
-        self.f2c = nn.Sequential(
-            nn.Conv2d(self.dim, self.num_attrs, kernel_size=1),
-            nn.AdaptiveMaxPool2d((1, 1)),
-            nn.Sigmoid()
-        )
+        self.prototype_conv = nn.Conv2d(self.dim, self.num_attrs, kernel_size=1, bias=False)
+        self.maxpool = nn.AdaptiveMaxPool2d((1, 1))
+        if activation == 'sigmoid':
+            self.activation = nn.Sigmoid()
+        elif activation == 'leakyrelu':
+            self.activation = nn.LeakyReLU()
+        else:
+            self.activation = None
 
-    def forward(self, batch: dict[str, torch.Tensor]):
-        x = batch["pixel_values"]
+        self.c2y = nn.Linear(num_attrs, num_classes)
 
+    def forward(self, x: torch.Tensor):
         features = self.backbone(x)  # type: torch.Tensor
         b, c, h, w = features.shape
 
-        if self.dist == "dot":
-            attn_maps = f.conv2d(features, self.prototypes[..., None, None])  # shape: [b,k,h,w]
-            # attn_maps = self.conv(features)
-        else:
-            raise NotImplementedError
-
-        max_attn_scores = f.max_pool2d(attn_maps, kernel_size=(h, w))
-        attr_scores = max_attn_scores.squeeze()  # shape: [b, k]
-
-        class_scores = attr_scores @ self.class_embeddings.T  # type: torch.Tensor
+        attn_maps = self.prototype_conv(features)  # shape: [b,k,h,w]
+        attr_scores = self.maxpool(attn_maps).squeeze()  # shape: [b, k]
+        if self.activation:
+            attr_scores = self.activation(attr_scores)
+        class_scores = self.c2y(attr_scores)
 
         # shape: [b,num_classes], [b,k], [b,k,h,w]
         return {
             "class_scores": class_scores,
             "attr_scores": attr_scores,
-            "attn_maps": attn_maps,
-            "prototypes": self.prototypes
+            "attn_maps": attn_maps
         }
 
+    @torch.inference_mode()
+    def inference(self):
+        return NotImplemented
 
-class APNLoss(nn.Module):
-    def __init__(self, group_ids: torch.Tensor, **kwargs):
+
+class DevLoss(nn.Module):
+    def __init__(self, attribute_weights: torch.Tensor, **kwargs):
         super().__init__()
-        self.l_cls_coef = kwargs["l_cls"]  # type: int
-        self.l_reg_coef = kwargs["l_reg"]  # type: int
-        self.l_cpt_coef = kwargs["l_cpt"]  # type: int
-        self.l_dec_coef = kwargs["l_dec"]  # type: int
+        self.l_y_coef = kwargs["l_y"]  # type: float
+        self.l_c_coef = kwargs["l_c"]  # type: float
+        self.l_cpt_coef = kwargs["l_cpt"]  # type: float
 
-        self.l_cls = nn.CrossEntropyLoss()
-        self.l_reg = nn.MSELoss()
-
-        self.group_ids = group_ids
+        self.l_y = nn.CrossEntropyLoss()
+        self.l_c = nn.BCEWithLogitsLoss(weight=attribute_weights.to(device=kwargs["device"]))
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
         loss_dict = {
-            "l_cls": self.l_cls_coef * self.l_cls(outputs["class_scores"], batch["class_ids"]),
-            "l_reg": self.l_reg_coef * self.l_reg(outputs["attr_scores"], batch["attr_scores"]),
-            "l_cpt": self.l_cpt_coef * self.l_cpt(outputs["attn_maps"]),
-            "l_dec": self.l_dec_coef * self.l_dec(outputs["prototypes"], self.group_ids)
+            "l_y": self.l_y_coef * self.l_y(outputs["class_scores"], batch["class_ids"]),
+            "l_c": self.l_c_coef * self.l_c(outputs["attr_scores"], batch["attr_scores"]),
+            "l_cpt": self.l_cpt_coef * self.l_cpt(outputs["attn_maps"])
         }
         l_total = sum(loss_dict.values())
         return loss_dict, l_total
@@ -92,7 +87,7 @@ class APNLoss(nn.Module):
 
     @staticmethod
     def l_dec(prototypes: torch.Tensor, group_ids: torch.Tensor):
-        '''Loss function for decorrelation of attribute groups'''
+        """Loss function for decorrelation of attribute groups"""
         all_group_losses = []
         for i in torch.unique(group_ids):
             mask = group_ids == i
@@ -100,34 +95,3 @@ class APNLoss(nn.Module):
             all_group_losses.append(group_loss)
         return sum(all_group_losses)
 
-
-def load_apn(
-        backbone_name: str,
-        class_embeddings: torch.Tensor,
-        attr_group_ids: torch.Tensor,
-        loss_coef_dict: dict[str, float],
-        dist: str,
-        lr: float,
-        betas: tuple[float, float],
-        step_size: int,
-        gamma: float,
-) -> tuple[nn.Module, nn.Module, optim.Optimizer, lr_scheduler.LRScheduler]:
-    if backbone_name == "resnet101":
-        num_classes, num_attrs = class_embeddings.shape
-        backbone = resnet101(weights=ResNet101_Weights.DEFAULT)
-        backbone.fc = nn.Linear(backbone.fc.in_features, num_classes)
-    else:
-        raise NotImplementedError
-    # apn_net = APN(backbone, class_embeddings, dist=dist)
-    # apn_loss = APNLoss(attr_group_ids, **{k.lower(): v for k, v in loss_coef_dict.items()})
-    #
-    # optimizer = optim.AdamW(
-    #     params=[
-    #         {"params": apn_net.backbone.parameters(), "lr": lr * 0.1},
-    #         {"params": apn_net.prototypes},
-    #     ],
-    #     lr=lr,
-    #     betas=betas,
-    # )
-    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
-    # return apn_net, apn_loss, optimizer, scheduler
