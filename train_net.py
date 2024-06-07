@@ -123,7 +123,11 @@ def main():
     #################
     # Setup logging #
     #################
-    log_dir = Path("logs") / "CUB_runs" / f"dev_{cfg.MODEL.LOSSES.L_C}_{cfg.OPTIM.LR}"
+    if cfg.MODEL.ACTIVATION:
+        activation = cfg.MODEL.ACTIVATION
+    else:
+        activation = "None"
+    log_dir = Path("logs") / "CUB_runs" / f"dev_{cfg.MODEL.LOSSES.L_C}_{cfg.OPTIM.LR}_{activation}"
     log_dir.mkdir(parents=True, exist_ok=True)
     with open(os.path.join(log_dir, "hparams.yaml"), "w+") as fp:
         OmegaConf.save(OmegaConf.merge(OmegaConf.create({"NAME": experiment_name}), cfg), f=fp.name)
@@ -163,11 +167,11 @@ def main():
         num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
         num_classes = 200
         dataset_train = CUBDataset(
-            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train", use_attrs=cfg.DATASET.USE_ATTRS,
+            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val", use_attrs=cfg.DATASET.USE_ATTRS,
             use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
             transforms=train_transforms)
         dataset_val = CUBDataset(
-            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="val", use_attrs=cfg.DATASET.USE_ATTRS,
+            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val", use_attrs=cfg.DATASET.USE_ATTRS,
             use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
             transforms=train_transforms)
         dataloader_train = DataLoader(
@@ -197,13 +201,13 @@ def main():
     criterion = DevLoss(torch.tensor(dataset_train.attribute_weights), device=device, **loss_coef_dict)
 
     optimizer = optim.AdamW(params=[
-        {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
+        {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR_BACKBONE},
         {"params": net.prototype_conv.parameters()},
         {"params": net.c2y.parameters()}
     ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY)
 
-    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg.OPTIM.STEP_SIZE, gamma=cfg.OPTIM.GAMMA)
-    scheduler = None  # type: optim.lr_scheduler.StepLR | None
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg.OPTIM.STEP_SIZE, gamma=cfg.OPTIM.GAMMA)
+    # scheduler = None  # type: # optim.lr_scheduler.StepLR | None
 
     net.to(device)
     net.train()
