@@ -230,7 +230,7 @@ def main():
                        Path(log_dir) / f"{cfg.MODEL.NAME}.pth")
             best_val_acc = val_acc
             best_epoch = epoch
-        if epoch >= best_epoch + 30:
+        if epoch >= best_epoch + 15:
             break
 
         # Save prototype weights for inspection

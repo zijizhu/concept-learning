@@ -22,11 +22,6 @@ from models.utils import Backbone
 from models.cbm import CBM
 from models.dev import DevModel
 
-@torch.no_grad()
-def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-    class_preds, class_ids = outputs["class_preds"], batch["class_ids"]
-    return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
-
 
 def get_hi_lo_activations(model, dataloader):
     ...
@@ -63,7 +58,7 @@ def test_interventions(model: nn.Module, dataset_test: CUBDataset, num_groups_to
 
 @torch.no_grad()
 def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-    class_preds, class_ids = outputs["class_scroes"], batch["class_ids"]
+    class_preds, class_ids = outputs["class_scores"], batch["class_ids"]
     return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
 
 
@@ -80,7 +75,7 @@ def test_accuracy(
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
-        outputs = model(batch_inputs)
+        outputs = model(batch_inputs['pixel_values'])
 
         running_corrects += num_corrects_fn(outputs, batch_inputs)
 
@@ -172,7 +167,7 @@ def main():
         raise NotImplementedError
 
     net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes, activation=cfg.MODEL.ACTIVATION)
-    state_dict = torch.load(log_dir / f"{cfg.MODEL.NAME}.pt", map_location=device)
+    state_dict = torch.load(log_dir / f"{cfg.MODEL.NAME}.pth", map_location=device)
     net.load_state_dict(state_dict)
 
     ###############
