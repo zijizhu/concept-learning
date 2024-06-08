@@ -3,11 +3,12 @@ MODEL:
   ACTIVATION: None
   BACKBONE: "resnet101"
   LOSSES:
-    L_C: 1e-3
+    L_C: 1e-2
     L_Y: 1
     L_CPT: 1e-3
 DATASET:
   NAME: "CUB"
+  NUM_ATTRS: 112
   ROOT_DIR: "datasets"
   USE_ATTRS: "data/cub/attributes.txt"
   USE_ATTR_MASK: "data/cub/attribute_names_mask.txt"

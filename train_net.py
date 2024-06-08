@@ -16,7 +16,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
-from data.cub.transforms import get_transforms_cbm
+from data.cub.transforms import get_transforms_dev
 from models.dev import DevModel, DevLoss
 
 
@@ -114,7 +114,7 @@ def main():
     seed_everything(cfg.SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    experiment_name = config_path.stem
+    experiment_name = f"dev-{cfg.DATASET.NAME}-L_C_{cfg.MODEL.LOSSES.L_C}-LR_{cfg.OPTIM.LR}-{cfg.MODEL.ACTIVATION}"
     print("Experiment Name:", experiment_name)
     print("Hyperparameters:")
     print(OmegaConf.to_yaml(cfg))
@@ -123,14 +123,11 @@ def main():
     #################
     # Setup logging #
     #################
-    if cfg.MODEL.ACTIVATION:
-        activation = cfg.MODEL.ACTIVATION
-    else:
-        activation = "None"
-    log_dir = Path("logs") / "CUB_runs" / f"dev_{cfg.MODEL.LOSSES.L_C}_{cfg.OPTIM.LR}_{activation}"
+
+    log_dir = Path("logs") / "CUB_runs" / experiment_name
     log_dir.mkdir(parents=True, exist_ok=True)
     with open(os.path.join(log_dir, "hparams.yaml"), "w+") as fp:
-        OmegaConf.save(OmegaConf.merge(OmegaConf.create({"NAME": experiment_name}), cfg), f=fp.name)
+        OmegaConf.save(cfg, f=fp.name)
 
     summary_writer = SummaryWriter(log_dir=str(log_dir))
     summary_writer.add_text("Model", cfg.MODEL.NAME)
@@ -140,6 +137,7 @@ def main():
     summary_writer.add_text("Seed", str(cfg.SEED))
 
     summary_writer.add_text("Attribute Loss Coefficient", str(cfg.MODEL.LOSSES.L_C))
+    summary_writer.add_text("Attention Map Loss Coefficient", str(cfg.MODEL.LOSSES.L_CPT))
 
     summary_writer.add_text("Main Model Learning Rate", str(cfg.OPTIM.LR))
     summary_writer.add_text("Backbone Finetuning Learning Rate", str(cfg.OPTIM.LR_BACKBONE))
@@ -157,12 +155,13 @@ def main():
     )
     logger = logging.getLogger(__name__)
 
+
     #################################
     # Setup datasets and transforms #
     #################################
 
     if cfg.DATASET.NAME == "CUB":
-        train_transforms, test_transforms = get_transforms_cbm()
+        train_transforms, test_transforms = get_transforms_dev()
 
         num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
         num_classes = 200
@@ -208,7 +207,6 @@ def main():
     ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg.OPTIM.STEP_SIZE, gamma=cfg.OPTIM.GAMMA)
-    # scheduler = None  # type: # optim.lr_scheduler.StepLR | None
 
     net.to(device)
     net.train()
@@ -228,8 +226,8 @@ def main():
 
         # Early stopping based on validation accuracy
         if val_acc > best_val_acc:
-            torch.save({k: v.cpu() for k, v in backbone.state_dict().items()},
-                       Path(log_dir) / f"{cfg.MODEL.NAME}.pt")
+            torch.save({k: v.cpu() for k, v in net.state_dict().items()},
+                       Path(log_dir) / f"{cfg.MODEL.NAME}.pth")
             best_val_acc = val_acc
             best_epoch = epoch
         if epoch >= best_epoch + 30:
@@ -238,7 +236,7 @@ def main():
         # Save prototype weights for inspection
         prototype_weights.append(net.prototype_conv.weight.detach().cpu())
 
-    torch.save(torch.stack(prototype_weights), Path(log_dir) / "prototype_weights.pt")
+    torch.save(torch.stack(prototype_weights), Path(log_dir) / "prototype_weights.pth")
 
 
 if __name__ == "__main__":

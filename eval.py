@@ -17,14 +17,19 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
-from data.cub.transforms import get_transforms_cbm
+from data.cub.transforms import get_transforms_dev
 from models.utils import Backbone
 from models.cbm import CBM
+from models.dev import DevModel
 
 @torch.no_grad()
 def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
     class_preds, class_ids = outputs["class_preds"], batch["class_ids"]
     return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
+
+
+def get_hi_lo_activations(model, dataloader):
+    ...
 
 
 # TODO
@@ -56,10 +61,9 @@ def test_interventions(model: nn.Module, dataset_test: CUBDataset, num_groups_to
         logger.info(f"Test Acc: {acc:.4f}")
 
 
-
 @torch.no_grad()
 def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-    class_preds, class_ids = outputs["class_preds"], batch["class_ids"]
+    class_preds, class_ids = outputs["class_scroes"], batch["class_ids"]
     return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
 
 
@@ -88,38 +92,26 @@ def test_accuracy(
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluation Script")
-    parser.add_argument("-c", "--config_path", type=str, required=True)
-    parser.add_argument("-o", "--options", type=str, nargs="+")
+    parser.add_argument("-e", "--experiment_dir", type=str, required=True)
 
     args = parser.parse_args()
-    config_path = Path(args.config_path)
-    base_cfg = OmegaConf.load(config_path)
-    if args.options:
-        cli_cfg = OmegaConf.from_dotlist(args.options)
-        cfg = OmegaConf.merge(base_cfg, cli_cfg)
-    else:
-        cfg = base_cfg
+    log_dir = Path(args.experiment_dir)
+    config_path = log_dir / "hparams.yaml"
+    cfg = OmegaConf.load(config_path)
 
     seed_everything(cfg.SEED)
     rng = np.random.default_rng(cfg.SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    experiment_name = config_path.stem
+    experiment_name = log_dir.stem
     print("Experiment Name:", experiment_name)
-    print("Hyperparameters:")
-    print(OmegaConf.to_yaml(cfg))
     print("Device:", device)
 
     #################
     # Setup logging #
     #################
 
-    log_dir = Path("logs") / f'{datetime.now().strftime("%Y-%m-%d_%H-%M")}_{experiment_name}'
-    log_dir.mkdir(parents=True, exist_ok=True)
-    with open(log_dir / "hparams.yaml", "w+") as fp:
-        OmegaConf.save(OmegaConf.merge(OmegaConf.create({"NAME": experiment_name}), cfg), f=fp.name)
-
-    summary_writer = SummaryWriter(log_dir=str(log_dir))
+    summary_writer = SummaryWriter(log_dir=str(log_dir), comment="eval")
     summary_writer.add_text("Model", cfg.MODEL.NAME)
     summary_writer.add_text("Dataset", cfg.DATASET.NAME)
     summary_writer.add_text("Seed", str(cfg.SEED))
@@ -140,45 +132,48 @@ def main():
     # Setup datasets and transforms #
     #################################
 
+    #################################
+    # Setup datasets and transforms #
+    #################################
+
     if cfg.DATASET.NAME == "CUB":
-        if cfg.DATASET.PREPROCESS == "CBM":
-            _, test_transforms = get_transforms_cbm()
-        else:
-            raise NotImplementedError
+        train_transforms, test_transforms = get_transforms_dev()
 
         num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
-        groups = cfg.get("DATASET.GROUPS", "attributes")
-        use_attrs = cfg.get("DATASET.USE_ATTRS", "binary")
         num_classes = 200
-
+        dataset_train = CUBDataset(
+            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val", use_attrs=cfg.DATASET.USE_ATTRS,
+            use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
+            transforms=train_transforms)
         dataset_test = CUBDataset(
-            os.path.join(cfg.DATASET.ROOT_DIR, "CUB"),
-            use_attrs=use_attrs,
-            num_attrs=num_attrs,
-            split="test",
-            groups=groups,
-            transforms=test_transforms,
-        )
-        dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=4)
-    elif cfg.DATASET.NAME == "CELEB":
-        raise NotImplementedError
+            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test", use_attrs=cfg.DATASET.USE_ATTRS,
+            use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
+            transforms=train_transforms)
+        dataloader_train = DataLoader(
+            dataset=dataset_train, batch_size=1,
+            shuffle=True, num_workers=8)
+        dataloader_test = DataLoader(
+            dataset=dataset_test, batch_size=1,
+            shuffle=True, num_workers=8)
     else:
         raise NotImplementedError
 
     ###############
     # Load models #
     ###############
-    if "CBM" in experiment_name:
-        backbone = timm.create_model(cfg.MODEL.BACKBONE.NAME, pretrained=True, aux_logits=False)
-        net = CBM(backbone=backbone, num_concepts=num_attrs, num_classes=num_classes)
-        state_dict = torch.load(cfg.MODEL.CKPT_PATH, map_location=device)
-        net.load_state_dict(state_dict)
-    elif "backbone" in experiment_name:
-        net = Backbone(name=cfg.MODEL.NAME, num_classes=num_classes)
-        state_dict = torch.load(cfg.MODEL.CKPT_PATH, map_location=device)
-        net.load_state_dict(state_dict)
+
+    if cfg.MODEL.BACKBONE == 'resnet101':
+        from torchvision.models import resnet101, ResNet101_Weights
+        backbone = resnet101(weights=ResNet101_Weights.DEFAULT)
+    elif cfg.MODEL.BACKBONE == 'resnet50':
+        from torchvision.models import resnet50, ResNet50_Weights
+        backbone = resnet50(weights=ResNet50_Weights.DEFAULT)
     else:
         raise NotImplementedError
+
+    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes, activation=cfg.MODEL.ACTIVATION)
+    state_dict = torch.load(log_dir / f"{cfg.MODEL.NAME}.pt", map_location=device)
+    net.load_state_dict(state_dict)
 
     ###############
     # Evaluations #
@@ -190,12 +185,12 @@ def main():
     # Test Accuracy
     logger.info("Start task accuracy evaluation...")
     test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
-    if "backbone" in experiment_name:
-        logger.info("DONE!")
-        exit(0)
+
+    exit(0)
 
     # TODO Test Intervention
     logger.info("Start intervention evaluation...")
+
     num_groups_to_intervene = [0, 4, 8, 12, 16, 20, 24, 28]
     test_interventions(model=net, dataset_test=dataset_test, num_groups_to_intervene=num_groups_to_intervene,
                        num_corrects_fn=compute_corrects, dataset_size=len(dataset_test), logger=logger,
