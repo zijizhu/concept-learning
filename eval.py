@@ -20,8 +20,12 @@ from models.dev import DevModel
 
 
 @torch.no_grad()
-def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-    class_preds, class_ids = outputs["class_scores"], batch["class_ids"]
+def compute_corrects(outputs: dict[str, torch.Tensor] | torch.Tensor, batch: dict[str, torch.Tensor]):
+    if isinstance(outputs, dict):
+        class_preds = outputs["class_scores"]
+    else:
+        class_preds = outputs
+    class_ids = batch["class_ids"]
     return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
 
 
@@ -83,7 +87,7 @@ def test_interventions_full(model: nn.Module, dataloader: DataLoader, num_correc
     # Inference loop
     for test_inputs in tqdm(dataloader):
         test_inputs = {k: v.to(device) for k, v in test_inputs.items()}
-        results = model.c2y(test_inputs["attr_scores"])
+        results = model.c2y(test_inputs["attr_scores"].to(torch.float32))
 
         running_corrects += num_corrects_fn(results, test_inputs)
 
