@@ -114,10 +114,12 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     multistage = cfg.OPTIM.get('BACKBONE_FT', False)
-    experiment_name = (f"dev-{cfg.DATASET.NAME}"
+    use_attention = cfg.MODEL.get('USE_ATTENTION', False)
+    experiment_name = (f"{cfg.MODEL.NAME}-{cfg.DATASET.NAME}"
                        f"-{'multi' if multistage else 'single'}"
                        f"-L_C_{cfg.MODEL.LOSSES.L_C}"
-                       f"-LR_{cfg.OPTIM.LR}-{cfg.MODEL.ACTIVATION}")
+                       f"-L_CPT_{cfg.MODEL.LOSSES.L_CPT}"
+                       f"-LR_{cfg.OPTIM.LR}-{'attn' if use_attention else 'none'}")
     print("Experiment Name:", experiment_name)
     print("Hyperparameters:")
     print(OmegaConf.to_yaml(cfg))

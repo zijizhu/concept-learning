@@ -16,6 +16,7 @@ class DevModel(nn.Module):
 
         self.prototype_conv = nn.Conv2d(self.dim, self.num_attrs, kernel_size=1, bias=False)
         if use_attention:
+            print("Model uses attention")
             self.pool = nn.MultiheadAttention(embed_dim=7*7, num_heads=1, dropout=0.1, batch_first=True)
         else:
             self.pool = nn.AdaptiveMaxPool2d((1, 1))
