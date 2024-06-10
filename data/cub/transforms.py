@@ -47,7 +47,6 @@ def get_transforms_dev():
             t.Resize(size=232, antialias=True),
             t.RandomHorizontalFlip(),
             t.ColorJitter(0.1),
-            # t.RandomAffine(degrees=90, translate=(0.2, 0.2), scale=(0.8, 1.2)),
             t.RandomCrop(224),
             t.ToTensor(),
         ]

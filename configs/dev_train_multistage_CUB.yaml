@@ -17,6 +17,10 @@ DATASET:
   USE_ATTR_MASK: "data/cub/attribute_names_mask.txt"
   USE_SPLITS: "data/cub/split_image_ids.npz"
 OPTIM:
+  BACKBONE_FT:
+    LR: 1e-3
+    EPOCHS: 50
+    FREEZE_EPOCHS: 30
   LR: 1e-3
   EPOCHS: 300
   BATCH_SIZE: 64

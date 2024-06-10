@@ -83,7 +83,6 @@ def val_epoch(model: nn.Module,
               logger: logging.Logger,
               model_name: str):
     running_corrects = 0
-
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
         outputs = model(batch_inputs["pixel_values"])
@@ -114,7 +113,11 @@ def main():
     seed_everything(cfg.SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    experiment_name = f"dev-{cfg.DATASET.NAME}-L_C_{cfg.MODEL.LOSSES.L_C}-LR_{cfg.OPTIM.LR}-{cfg.MODEL.ACTIVATION}"
+    multistage = cfg.OPTIM.get('BACKBONE_FT', False)
+    experiment_name = (f"dev-{cfg.DATASET.NAME}"
+                       f"-{'multi' if multistage else 'single'}"
+                       f"-L_C_{cfg.MODEL.LOSSES.L_C}"
+                       f"-LR_{cfg.OPTIM.LR}-{cfg.MODEL.ACTIVATION}")
     print("Experiment Name:", experiment_name)
     print("Hyperparameters:")
     print(OmegaConf.to_yaml(cfg))
@@ -140,7 +143,7 @@ def main():
     summary_writer.add_text("Attention Map Loss Coefficient", str(cfg.MODEL.LOSSES.L_CPT))
 
     summary_writer.add_text("Main Model Learning Rate", str(cfg.OPTIM.LR))
-    summary_writer.add_text("Backbone Finetuning Learning Rate", str(cfg.OPTIM.LR_BACKBONE))
+    summary_writer.add_text("Backbone Finetuning", str(cfg.OPTIM.get("BACKBONE_FT", "N/A")))
     summary_writer.add_text("Weight Decay", str(cfg.OPTIM.WEIGHT_DECAY))
 
 
@@ -187,6 +190,39 @@ def main():
     else:
         raise NotImplementedError
 
+    if multistage:
+        logger.info("Fine-tune backbone first, then freeze it and train other layers.")
+        backbone.fc = nn.Linear(backbone.fc.in_features, num_classes)
+        optimizer = optim.Adam(backbone.parameters(), lr=cfg.OPTIM.BACKBONE_FT.LR)
+
+        def criterion(outputs, batch_inputs):
+            loss = f.cross_entropy(outputs, batch_inputs["class_ids"])
+            return {'l_y': loss}, loss
+
+        logger.info("Start tuning backbone...")
+        backbone.to(device)
+        backbone.train()
+
+        best_epoch, best_val_acc = 0, 0.
+        for epoch in range(cfg.OPTIM.BACKBONE_FT.EPOCHS):
+            train_epoch(model=backbone, loss_fn=criterion, loss_keys=['l_y'], num_corrects_fn=compute_corrects,
+                        dataloader=dataloader_train, optimizer=optimizer, writer=summary_writer,
+                        batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train), device=device,
+                        epoch=epoch, logger=logger, model_name="backbone")
+
+            val_acc = val_epoch(model=backbone, num_corrects_fn=compute_corrects, dataloader=dataloader_val,
+                                writer=summary_writer, dataset_size=len(dataset_val), device=device,
+                                epoch=epoch, logger=logger, model_name="backbone")
+
+            # Early stopping based on validation accuracy
+            if val_acc > best_val_acc:
+                torch.save({k: v.cpu() for k, v in backbone.state_dict().items()},
+                           Path(log_dir) / f"{cfg.MODEL.BACKBONE}.pt")
+                best_val_acc = val_acc
+                best_epoch = epoch
+            if epoch >= best_epoch + 10:
+                break
+
     net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes,
                    use_sigmoid=cfg.MODEL.USE_SIGMOID, use_attention=cfg.MODEL.USE_ATTENTION)
     loss_keys = ['l_y', 'l_c'] + (['l_cpt'] if cfg.MODEL.LOSSES.L_CPT > 0 else [])
@@ -197,10 +233,14 @@ def main():
                         use_sigmoid=cfg.MODEL.USE_SIGMOID)
 
     optimizer = optim.SGD(params=[
-        {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR_BACKBONE},
+        {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
         {"params": net.prototype_conv.parameters()},
         {"params": net.c2y.parameters()}
     ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
+
+    if multistage:
+        for param in net.backbone.parameters():
+            param.requires_grad = False
 
     net.to(device)
     net.train()
@@ -228,6 +268,11 @@ def main():
         # Save prototype weights for inspection
         prototype_weights.append(net.prototype_conv.weight.detach().cpu())
         torch.save(torch.stack(prototype_weights, dim=0), Path(log_dir) / "prototype_weights.pth")
+
+        # Un-freeze backbone
+        if multistage and epoch == cfg.OPTIM.BACKBONE_FT.FREEZE_EPOCHS:
+            for param in net.backbone.parameters():
+                param.requires_grad = True
 
 
 if __name__ == "__main__":
