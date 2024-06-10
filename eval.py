@@ -43,11 +43,11 @@ def get_lo_hi_activations(model, dataloader, hi_lo_quantiles: tuple[int, int] = 
 
 @torch.inference_mode()
 def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups: list[int],
-                       attribute_group_indices: np.array, train_lo_hi_activations: torch.Tensor,
+                       attribute_group_indices: np.array, train_activations: torch.Tensor | None, use_sigmoid: bool,
                        num_corrects_fn: Callable, dataset_size: int, rng: np.random.Generator,
                        logger: logging.Logger, writer: SummaryWriter, device: torch.device):
     """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
-    num_attrs = len(train_lo_hi_activations)
+    num_attrs = 112
 
     for num_groups in num_int_groups:
         sampled_group_ids = rng.choice(np.arange(len(np.unique(attribute_group_indices))),
@@ -58,9 +58,12 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups:
             int_mask = np.isin(attribute_group_indices, int_group_ids)
             int_mask = torch.tensor(int_mask.astype(int), device=device)
             test_inputs = {k: v.to(device) for k, v in test_inputs.items()}
-            int_value_indices = (torch.arange(num_attrs).to(device),
-                                 test_inputs["attr_scores"].squeeze().to(device, dtype=torch.long))
-            int_values = train_lo_hi_activations[int_value_indices]
+            if not use_sigmoid:
+                int_value_indices = (torch.arange(num_attrs).to(device),
+                                     test_inputs["attr_scores"].squeeze().to(dtype=torch.long))
+                int_values = train_activations[int_value_indices]
+            else:
+                int_values = test_inputs["attr_scores"]
             results = model.inference(test_inputs["pixel_values"], int_mask=int_mask, int_values=int_values)
 
             running_corrects += num_corrects_fn(results, test_inputs)
@@ -186,14 +189,15 @@ def main():
     logger.info("Start task accuracy evaluation...")
     test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
 
-    # TODO Test Intervention
+    # Test Intervention Performance
     logger.info("Start intervention evaluation...")
-
-    num_groups_to_intervene = [0, 4, 8, 12, 16, 20, 24, 28]
-    lo_hi_activations = get_lo_hi_activations(net, dataloader_test)
+    train_activations = None
+    if not cfg.MODEL.USE_SIGMOID:
+        train_activations = get_lo_hi_activations(net, dataloader_test, device=device)
+    num_groups_to_intervene = [4, 8, 12, 16, 20, 24, 28]
     test_interventions(model=net, dataloader=dataloader_test, num_int_groups=num_groups_to_intervene,
                        attribute_group_indices=dataset_train.attribute_group_indices,
-                       train_lo_hi_activations=lo_hi_activations, num_corrects_fn=compute_corrects,
+                       train_activations=train_activations, num_corrects_fn=compute_corrects,
                        dataset_size=len(dataset_test), rng=rng, logger=logger, writer=summary_writer, device=device)
 
     logger.info("DONE!")

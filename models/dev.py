@@ -43,12 +43,14 @@ class DevModel(nn.Module):
         }
 
     @torch.inference_mode()
-    def inference(self, x: torch.Tensor, int_mask: torch.Tensor | None = None, int_values: torch.Tensor | None = None):
+    def inference(self, x: torch.Tensor,
+                  int_mask: torch.Tensor | None = None,
+                  int_values: torch.Tensor | None = None):
         features = self.backbone(x)  # type: torch.Tensor
         attn_maps = self.prototype_conv(features)  # shape: [b,k,h,w]
-        c = self.maxpool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
-        if self.activation:
-            c = self.activation(c)  # shape: [b, k]
+        c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
+        if self.s:
+            c = self.s(c)  # shape: [b, k]
 
         if int_mask is not None:
             assert isinstance(int_mask, torch.Tensor) and isinstance(int_values, torch.Tensor)
