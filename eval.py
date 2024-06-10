@@ -193,12 +193,15 @@ def main():
     logger.info("Start intervention evaluation...")
     train_activations = None
     if not cfg.MODEL.USE_SIGMOID:
+        logger.info("Model does not use sigmoid activation, generate activations for intervention...")
         train_activations = get_lo_hi_activations(net, dataloader_test, device=device)
+
     num_groups_to_intervene = [4, 8, 12, 16, 20, 24, 28]
     test_interventions(model=net, dataloader=dataloader_test, num_int_groups=num_groups_to_intervene,
                        attribute_group_indices=dataset_train.attribute_group_indices,
-                       train_activations=train_activations, num_corrects_fn=compute_corrects,
-                       dataset_size=len(dataset_test), rng=rng, logger=logger, writer=summary_writer, device=device)
+                       use_sigmoid=cfg.MODEL.USE_SIGMOID, train_activations=train_activations,
+                       num_corrects_fn=compute_corrects, dataset_size=len(dataset_test), rng=rng,
+                       logger=logger, writer=summary_writer, device=device)
 
     logger.info("DONE!")
 
