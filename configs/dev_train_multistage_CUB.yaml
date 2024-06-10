@@ -6,7 +6,7 @@ MODEL:
   LOSSES:
     L_C: 1e-2
     L_Y: 1
-    L_CPT: 1e-3
+    L_CPT: 0
     USE_ATTR_WEIGHTS: False
 DATASET:
   NAME: "CUB"
@@ -19,7 +19,7 @@ OPTIM:
   BACKBONE_FT:
     LR: 1e-3
     EPOCHS: 50
-    FREEZE_EPOCHS: 30
+    FREEZE_EPOCHS: 50
   LR: 1e-3
   EPOCHS: 300
   BATCH_SIZE: 64

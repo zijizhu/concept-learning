@@ -35,8 +35,8 @@ class DevModel(nn.Module):
         if self.use_attention:
             attn_maps = attn_maps.view(b, self.num_attrs, -1)
             attn_maps, _ = self.pool(query=attn_maps, key=attn_maps, value=attn_maps)
-            attn_maps = attn_maps.view(b, self.num_attrs, h, w)
             c = f.adaptive_avg_pool1d(attn_maps, 1).squeeze(dim=-1)
+            attn_maps = attn_maps.view(b, self.num_attrs, h, w)
         else:
             c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
         if self.s:
@@ -62,6 +62,7 @@ class DevModel(nn.Module):
             attn_maps = attn_maps.view(b, self.num_attrs, -1)
             attn_maps, _ = self.pool(query=attn_maps, key=attn_maps, value=attn_maps)
             c = f.adaptive_avg_pool1d(attn_maps, 1).squeeze(dim=-1)
+            attn_maps = attn_maps.view(b, self.num_attrs, h, w)
         else:
             c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
         if self.s:

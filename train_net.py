@@ -233,12 +233,19 @@ def main():
                         l_cpt_coef=cfg.MODEL.LOSSES.L_CPT,
                         attribute_weights=None,
                         use_sigmoid=cfg.MODEL.USE_SIGMOID)
-
-    optimizer = optim.SGD(params=[
-        {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
-        {"params": net.prototype_conv.parameters()},
-        {"params": net.c2y.parameters()}
-    ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
+    if use_attention:
+        optimizer = optim.SGD(params=[
+            {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
+            {"params": net.pool.parameters()},
+            {"params": net.prototype_conv.parameters()},
+            {"params": net.c2y.parameters()}
+        ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
+    else:
+        optimizer = optim.SGD(params=[
+            {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
+            {"params": net.prototype_conv.parameters()},
+            {"params": net.c2y.parameters()}
+        ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
 
     if multistage:
         for param in net.backbone.parameters():
