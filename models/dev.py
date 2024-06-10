@@ -75,7 +75,7 @@ class DevLoss(nn.Module):
 
         self.l_y = nn.CrossEntropyLoss()
         if use_sigmoid:
-            self.l_c = nn.BCELoss(weight=attribute_weights)
+            self.l_c = nn.BCELoss(weight=attribute_weights, reduction='sum')
         else:
             self.l_c = nn.BCEWithLogitsLoss(weight=attribute_weights, reduction='sum')
 
