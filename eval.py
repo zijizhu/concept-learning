@@ -75,7 +75,7 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups:
         # Compute accuracy
         acc = running_corrects / dataset_size
         writer.add_scalar("Acc/intervention curve", acc, num_groups)
-        logger.info(f"Test Acc: {acc:.4f}")
+        logger.info(f"Test Acc when {num_groups} attribute groups intervened: {acc:.4f}")
 
 
 @torch.inference_mode()

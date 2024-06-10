@@ -12,10 +12,11 @@ class DevModel(nn.Module):
         self.backbone = torch.nn.Sequential(*list(backbone.children())[:-2])
         self.dim = backbone.fc.in_features
         self.num_attrs, self.num_classes = num_attrs, num_classes
+        self.use_attention = use_attention
 
         self.prototype_conv = nn.Conv2d(self.dim, self.num_attrs, kernel_size=1, bias=False)
         if use_attention:
-            self.pool = nn.MultiheadAttention(49, num_heads=1)
+            self.pool = nn.MultiheadAttention(embed_dim=7*7, num_heads=1, dropout=0.1, batch_first=True)
         else:
             self.pool = nn.AdaptiveMaxPool2d((1, 1))
         if use_sigmoid:
@@ -30,7 +31,13 @@ class DevModel(nn.Module):
         b, c, h, w = features.shape
 
         attn_maps = self.prototype_conv(features)  # shape: [b,k,h,w]
-        c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
+        if self.use_attention:
+            attn_maps = attn_maps.view(b, self.num_attrs, -1)
+            attn_maps, _ = self.pool(query=attn_maps, key=attn_maps, value=attn_maps)
+            attn_maps = attn_maps.view(b, self.num_attrs, h, w)
+            c = f.adaptive_avg_pool1d(attn_maps, 1).squeeze(dim=-1)
+        else:
+            c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
         if self.s:
             c = self.s(c)
         y = self.c2y(c)
@@ -47,8 +54,15 @@ class DevModel(nn.Module):
                   int_mask: torch.Tensor | None = None,
                   int_values: torch.Tensor | None = None):
         features = self.backbone(x)  # type: torch.Tensor
+        b, c, h, w = features.shape
         attn_maps = self.prototype_conv(features)  # shape: [b,k,h,w]
-        c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
+
+        if self.use_attention:
+            attn_maps = attn_maps.view(b, self.num_attrs, -1)
+            attn_maps, _ = self.pool(query=attn_maps, key=attn_maps, value=attn_maps)
+            c = f.adaptive_avg_pool1d(attn_maps, 1).squeeze(dim=-1)
+        else:
+            c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
         if self.s:
             c = self.s(c)  # shape: [b, k]
 

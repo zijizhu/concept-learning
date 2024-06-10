@@ -1,6 +1,5 @@
 MODEL:
   NAME: "dev_resnet50"
-  ACTIVATION: None
   BACKBONE: "resnet50"
   USE_SIGMOID: True
   USE_ATTENTION: False
@@ -18,7 +17,7 @@ DATASET:
   USE_SPLITS: "data/cub/split_image_ids.npz"
 OPTIM:
   LR: 1e-3
-  EPOCHS: 500
+  EPOCHS: 300
   BATCH_SIZE: 64
   WEIGHT_DECAY: 4e-4
 SEED: 42

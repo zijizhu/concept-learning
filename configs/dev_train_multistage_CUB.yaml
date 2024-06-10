@@ -1,6 +1,5 @@
 MODEL:
   NAME: "dev_resnet50"
-  ACTIVATION: None
   BACKBONE: "resnet50"
   USE_SIGMOID: True
   USE_ATTENTION: False

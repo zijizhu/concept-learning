@@ -68,7 +68,7 @@ def train_epoch(model: nn.Module,
         logger.info(f"EPOCH {epoch} {model_name} Train {loss_name}: {loss_avg:.4f}")
 
     epoch_acc = running_corrects / dataset_size
-    writer.add_scalar("Acc/{model_name}/train", epoch_acc, epoch)
+    writer.add_scalar(f"Acc/{model_name}/train", epoch_acc, epoch)
     logger.info(f"EPOCH {epoch} {model_name} Train Acc: {epoch_acc:.4f}")
 
 
