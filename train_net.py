@@ -155,7 +155,6 @@ def main():
     )
     logger = logging.getLogger(__name__)
 
-
     #################################
     # Setup datasets and transforms #
     #################################
@@ -190,7 +189,7 @@ def main():
 
     net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes,
                    use_sigmoid=cfg.MODEL.USE_SIGMOID, use_attention=cfg.MODEL.USE_ATTENTION)
-
+    loss_keys = ['l_y', 'l_c'] + (['l_cpt'] if cfg.MODEL.LOSSES.L_CPT > 0 else [])
     criterion = DevLoss(l_c_coef=cfg.MODEL.LOSSES.L_C,
                         l_y_coef=cfg.MODEL.LOSSES.L_Y,
                         l_cpt_coef=cfg.MODEL.LOSSES.L_CPT,
@@ -203,23 +202,19 @@ def main():
         {"params": net.c2y.parameters()}
     ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg.OPTIM.STEP_SIZE, gamma=cfg.OPTIM.GAMMA)
-
     net.to(device)
     net.train()
     best_epoch, best_val_acc = 0, 0.
     prototype_weights = []
     for epoch in range(cfg.OPTIM.EPOCHS):
-        train_epoch(model=net, loss_fn=criterion, loss_keys=list(k.lower() for k in cfg.MODEL.LOSSES),
-                    num_corrects_fn=compute_corrects, dataloader=dataloader_train, optimizer=optimizer,
-                    writer=summary_writer, batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train),
+        train_epoch(model=net, loss_fn=criterion, loss_keys=loss_keys, num_corrects_fn=compute_corrects,
+                    dataloader=dataloader_train, optimizer=optimizer, writer=summary_writer,
+                    batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train),
                     device=device, epoch=epoch, logger=logger, model_name="full model")
 
         val_acc = val_epoch(model=net, num_corrects_fn=compute_corrects, dataloader=dataloader_val,
                             writer=summary_writer, dataset_size=len(dataset_val), device=device,
                             epoch=epoch, logger=logger, model_name="full model")
-        if scheduler:
-            scheduler.step()
 
         # Early stopping based on validation accuracy
         if val_acc > best_val_acc:
@@ -232,8 +227,7 @@ def main():
 
         # Save prototype weights for inspection
         prototype_weights.append(net.prototype_conv.weight.detach().cpu())
-
-    torch.save(torch.stack(prototype_weights), Path(log_dir) / "prototype_weights.pth")
+        torch.save(torch.stack(prototype_weights, dim=0), Path(log_dir) / "prototype_weights.pth")
 
 
 if __name__ == "__main__":
