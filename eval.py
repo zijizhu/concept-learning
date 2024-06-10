@@ -2,11 +2,9 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-import timm
 import numpy as np
 import torch
 from lightning import seed_everything
@@ -18,34 +16,52 @@ from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
 from data.cub.transforms import get_transforms_dev
-from models.utils import Backbone
-from models.cbm import CBM
 from models.dev import DevModel
 
 
-def get_hi_lo_activations(model, dataloader):
-    ...
+@torch.no_grad()
+def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
+    class_preds, class_ids = outputs["class_scores"], batch["class_ids"]
+    return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
 
 
-# TODO
-def test_interventions(model: nn.Module, dataset_test: CUBDataset, num_groups_to_intervene: list[int],
-                       num_corrects_fn: Callable, dataset_size: int,
-                       rng: np.random.Generator, logger: logging.Logger, writer: SummaryWriter, device: torch.device):
+@torch.inference_mode()
+def get_lo_hi_activations(model, dataloader, hi_lo_quantiles: tuple[int, int] = (0.95, 0.05),
+                          device: torch.device = torch.device('cpu')):
+    hi_quantile, lo_quantile = hi_lo_quantiles
+    all_concept_activations = []
+    for batch in tqdm(dataloader):
+        batch = {k: v.to(device) for k, v in batch.items()}
+        outputs = model(batch["pixel_values"])
+        all_concept_activations.append(outputs["attr_scores"])
+    activations = torch.cat(all_concept_activations, dim=0)
+    hi_activations = torch.quantile(activations, hi_quantile, dim=0)  # shape: [num_attrs]
+    lo_activations = torch.quantile(activations, lo_quantile, dim=0)  # shape: [num_attrs]
+
+    return torch.stack([lo_activations, hi_activations], dim=-1)  # shape: [num_attrs, 2]
+
+
+@torch.inference_mode()
+def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups: list[int],
+                       attribute_group_indices: np.array, train_lo_hi_activations: torch.Tensor,
+                       num_corrects_fn: Callable, dataset_size: int, rng: np.random.Generator,
+                       logger: logging.Logger, writer: SummaryWriter, device: torch.device):
     """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
-    dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=4)
+    num_attrs = len(train_lo_hi_activations)
 
-    for num_groups in num_groups_to_intervene:
-        sampled_group_ids = rng.choice(
-            np.arange(len(dataset_test.group_names)),
-            size=(len(dataset_test), num_groups)
-        )
+    for num_groups in num_int_groups:
+        sampled_group_ids = rng.choice(np.arange(len(np.unique(attribute_group_indices))),
+                                       size=(len(dataloader), num_groups))
         running_corrects = 0
         # Inference loop
-        for test_inputs, group_ids_to_intervene in tqdm(zip(dataloader_test, sampled_group_ids), total=len(dataloader_test)):
-            intervention_mask = np.isin(dataset_test.attribute_group_indices, group_ids_to_intervene)
-            intervention_mask = torch.tensor(intervention_mask.astype(int), device=device)
+        for test_inputs, int_group_ids in tqdm(zip(dataloader, sampled_group_ids), total=len(dataloader)):
+            int_mask = np.isin(attribute_group_indices, int_group_ids)
+            int_mask = torch.tensor(int_mask.astype(int), device=device)
             test_inputs = {k: v.to(device) for k, v in test_inputs.items()}
-            results = model.inference(test_inputs, int_mask=intervention_mask, int_values=test_inputs["attr_scores"])
+            int_value_indices = (torch.arange(num_attrs).to(device),
+                                 test_inputs["attr_scores"].squeeze().to(device, dtype=torch.long))
+            int_values = train_lo_hi_activations[int_value_indices]
+            results = model.inference(test_inputs["pixel_values"], int_mask=int_mask, int_values=int_values)
 
             running_corrects += num_corrects_fn(results, test_inputs)
 
@@ -57,20 +73,12 @@ def test_interventions(model: nn.Module, dataset_test: CUBDataset, num_groups_to
 
 
 @torch.no_grad()
-def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-    class_preds, class_ids = outputs["class_scores"], batch["class_ids"]
-    return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
-
-
-@torch.no_grad()
-def test_accuracy(
-    model: nn.Module,
-    num_corrects_fn: nn.Module | Callable,
-    dataloader: DataLoader,
-    dataset_size: int,
-    device: torch.device,
-    logger: logging.Logger,
-):
+def test_accuracy(model: nn.Module,
+                  num_corrects_fn: nn.Module | Callable,
+                  dataloader: DataLoader,
+                  dataset_size: int,
+                  device: torch.device,
+                  logger: logging.Logger):
     running_corrects = 0
 
     for batch_inputs in tqdm(dataloader):
@@ -127,10 +135,6 @@ def main():
     # Setup datasets and transforms #
     #################################
 
-    #################################
-    # Setup datasets and transforms #
-    #################################
-
     if cfg.DATASET.NAME == "CUB":
         train_transforms, test_transforms = get_transforms_dev()
 
@@ -181,17 +185,15 @@ def main():
     logger.info("Start task accuracy evaluation...")
     test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
 
-    exit(0)
-
     # TODO Test Intervention
     logger.info("Start intervention evaluation...")
 
     num_groups_to_intervene = [0, 4, 8, 12, 16, 20, 24, 28]
-    test_interventions(model=net, dataset_test=dataset_test, num_groups_to_intervene=num_groups_to_intervene,
-                       num_corrects_fn=compute_corrects, dataset_size=len(dataset_test), logger=logger,
-                       writer=summary_writer, device=device, rng=rng)
-
-    # TODO Test Representation
+    lo_hi_activations = get_lo_hi_activations(net, dataloader_test)
+    test_interventions(model=net, dataloader=dataloader_test, num_int_groups=num_groups_to_intervene,
+                       attribute_group_indices=dataset_train.attribute_group_indices,
+                       train_lo_hi_activations=lo_hi_activations, num_corrects_fn=compute_corrects,
+                       dataset_size=len(dataset_test), rng=rng, logger=logger, writer=summary_writer, device=device)
 
     logger.info("DONE!")
 

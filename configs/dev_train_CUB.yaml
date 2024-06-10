@@ -1,11 +1,14 @@
 MODEL:
-  NAME: "dev_resnet101"
+  NAME: "dev_resnet50"
   ACTIVATION: None
-  BACKBONE: "resnet101"
+  BACKBONE: "resnet50"
+  USE_SIGMOID: True
+  USE_ATTENTION: False
   LOSSES:
     L_C: 1e-2
     L_Y: 1
     L_CPT: 1e-3
+    USE_ATTR_WEIGHTS: False
 DATASET:
   NAME: "CUB"
   NUM_ATTRS: 112
@@ -16,9 +19,9 @@ DATASET:
 OPTIM:
   LR_BACKBONE: 1e-4
   LR: 1e-3
-  EPOCHS: 50
+  EPOCHS: 200
   BATCH_SIZE: 64
-  STEP_SIZE: 5
+  STEP_SIZE: 50
   GAMMA: 0.2
   WEIGHT_DECAY: 4e-4
 SEED: 42

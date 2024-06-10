@@ -162,23 +162,17 @@ def main():
 
     if cfg.DATASET.NAME == "CUB":
         train_transforms, test_transforms = get_transforms_dev()
-
-        num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
         num_classes = 200
-        dataset_train = CUBDataset(
-            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val", use_attrs=cfg.DATASET.USE_ATTRS,
-            use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
-            transforms=train_transforms)
-        dataset_val = CUBDataset(
-            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val", use_attrs=cfg.DATASET.USE_ATTRS,
-            use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
-            transforms=train_transforms)
-        dataloader_train = DataLoader(
-            dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
-            shuffle=True, num_workers=8)
-        dataloader_val = DataLoader(
-            dataset=dataset_val, batch_size=cfg.OPTIM.BATCH_SIZE,
-            shuffle=True, num_workers=8)
+        num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
+        dataset_train = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val",
+                                   use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
+                                   use_splits=cfg.DATASET.USE_SPLITS, transforms=train_transforms)
+        dataset_val = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val",
+                                 use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
+                                 use_splits=cfg.DATASET.USE_SPLITS, transforms=train_transforms)
+        dataloader_train = DataLoader(dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
+                                      shuffle=True, num_workers=8)
+        dataloader_val = DataLoader(dataset=dataset_val, batch_size=cfg.OPTIM.BATCH_SIZE, shuffle=True, num_workers=8)
     else:
         raise NotImplementedError
 
@@ -194,17 +188,20 @@ def main():
     else:
         raise NotImplementedError
 
-    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes, activation=cfg.MODEL.ACTIVATION)
+    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes,
+                   use_sigmoid=cfg.MODEL.USE_SIGMOID, use_attention=cfg.MODEL.USE_ATTENTION)
 
-    loss_coef_dict = {k.lower(): v for k, v in dict(cfg.MODEL.LOSSES).items()}
-    criterion = DevLoss(torch.tensor(dataset_train.attribute_weights), sigmoid=(cfg.MODEL.ACTIVATION == "sigmoid"),
-                        device=device, **loss_coef_dict)
+    criterion = DevLoss(l_c_coef=cfg.MODEL.LOSSES.L_C,
+                        l_y_coef=cfg.MODEL.LOSSES.L_Y,
+                        l_cpt_coef=cfg.MODEL.LOSSES.L_CPT,
+                        attribute_weights=None,
+                        use_sigmoid=cfg.MODEL.USE_SIGMOID)
 
-    optimizer = optim.AdamW(params=[
+    optimizer = optim.SGD(params=[
         {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR_BACKBONE},
         {"params": net.prototype_conv.parameters()},
         {"params": net.c2y.parameters()}
-    ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY)
+    ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg.OPTIM.STEP_SIZE, gamma=cfg.OPTIM.GAMMA)
 
@@ -213,7 +210,7 @@ def main():
     best_epoch, best_val_acc = 0, 0.
     prototype_weights = []
     for epoch in range(cfg.OPTIM.EPOCHS):
-        train_epoch(model=net, loss_fn=criterion, loss_keys=list(loss_coef_dict.keys()),
+        train_epoch(model=net, loss_fn=criterion, loss_keys=list(k.lower() for k in cfg.MODEL.LOSSES),
                     num_corrects_fn=compute_corrects, dataloader=dataloader_train, optimizer=optimizer,
                     writer=summary_writer, batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train),
                     device=device, epoch=epoch, logger=logger, model_name="full model")
@@ -230,7 +227,7 @@ def main():
                        Path(log_dir) / f"{cfg.MODEL.NAME}.pth")
             best_val_acc = val_acc
             best_epoch = epoch
-        if epoch >= best_epoch + 15:
+        if epoch >= best_epoch + 30:
             break
 
         # Save prototype weights for inspection
