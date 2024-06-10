@@ -71,8 +71,26 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups:
         # Compute accuracy
 
         acc = running_corrects / dataset_size
-        writer.add_scalar("Acc/train", acc, num_groups)
+        writer.add_scalar("Acc/intervention curve", acc, num_groups)
         logger.info(f"Test Acc: {acc:.4f}")
+
+
+@torch.inference_mode()
+def test_interventions_full(model: nn.Module, dataloader: DataLoader, num_corrects_fn: Callable,
+                            dataset_size: int, logger: logging.Logger, writer: SummaryWriter, device: torch.device):
+    """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
+    running_corrects = 0
+    # Inference loop
+    for test_inputs, int_group_ids in tqdm(dataloader):
+        test_inputs = {k: v.to(device) for k, v in test_inputs.items()}
+        results = model.c2y(test_inputs["attr_scores"])
+
+        running_corrects += num_corrects_fn(results, test_inputs)
+
+    # Compute accuracy
+    acc = running_corrects / dataset_size
+    writer.add_scalar("Acc/full intervention", acc)
+    logger.info(f"Test Acc full intervention: {acc:.4f}")
 
 
 @torch.no_grad()
@@ -188,6 +206,10 @@ def main():
     # Test Accuracy
     logger.info("Start task accuracy evaluation...")
     test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
+
+    logger.info("Start full intervention evaluation...")
+    test_interventions_full(model=net, dataloader=dataloader_test, num_corrects_fn=compute_corrects,
+                            dataset_size=len(dataset_test), logger=logger, writer=summary_writer, device=device)
 
     # Test Intervention Performance
     logger.info("Start intervention evaluation...")
