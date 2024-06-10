@@ -81,7 +81,7 @@ def test_interventions_full(model: nn.Module, dataloader: DataLoader, num_correc
     """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
     running_corrects = 0
     # Inference loop
-    for test_inputs, int_group_ids in tqdm(dataloader):
+    for test_inputs in tqdm(dataloader):
         test_inputs = {k: v.to(device) for k, v in test_inputs.items()}
         results = model.c2y(test_inputs["attr_scores"])
 
