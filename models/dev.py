@@ -77,7 +77,7 @@ class DevLoss(nn.Module):
         if use_sigmoid:
             self.l_c = nn.BCELoss(weight=attribute_weights)
         else:
-            self.l_c = nn.BCEWithLogitsLoss(weight=attribute_weights)
+            self.l_c = nn.BCEWithLogitsLoss(weight=attribute_weights, reduction='sum')
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
         loss_dict = {

@@ -73,7 +73,6 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups:
             running_corrects += num_corrects_fn(results, test_inputs)
 
         # Compute accuracy
-
         acc = running_corrects / dataset_size
         writer.add_scalar("Acc/intervention curve", acc, num_groups)
         logger.info(f"Test Acc: {acc:.4f}")
