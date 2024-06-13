@@ -51,13 +51,12 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_
                        dataset_size: int, batch_size: int, rng: np.random.Generator, logger: logging.Logger,
                        writer: SummaryWriter, device: torch.device):
     """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
-    num_attrs = len(attribute_group_indices)
     num_total_groups = len(np.unique(attribute_group_indices))
 
     for num_int_groups in num_int_groups_list:
         sampled_group_ids, int_masks = [], []
         for _ in range(dataset_size):
-            group_id_choices = rng.choice(np.arange(num_attrs), size=num_int_groups, replace=False)
+            group_id_choices = rng.choice(np.arange(num_total_groups), size=num_int_groups, replace=False)
             mask = np.isin(attribute_group_indices, group_id_choices).astype(int)
             sampled_group_ids.append(group_id_choices)
             int_masks.append(mask)
