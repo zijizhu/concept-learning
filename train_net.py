@@ -193,10 +193,14 @@ def main():
 
     net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes, use_attention=cfg.MODEL.USE_ATTENTION)
     loss_keys = ['l_y', 'l_c'] + (['l_cpt'] if cfg.MODEL.LOSSES.L_CPT > 0 else [])
+    if cfg.MODEL.LOSSES.USE_ATTR_WEIGHTS:
+        attribute_weights = torch.tensor(dataset_train.attribute_weights, device=device)
+    else:
+        attribute_weights = None
     criterion = DevLoss(l_c_coef=cfg.MODEL.LOSSES.L_C,
                         l_y_coef=cfg.MODEL.LOSSES.L_Y,
                         l_cpt_coef=cfg.MODEL.LOSSES.L_CPT,
-                        attribute_weights=cfg.MODEL.LOSSES.USE_ATTR_WEIGHTS)
+                        attribute_weights=attribute_weights)
 
     # Initialize optimizer
     non_backbone_params = [p for name, p in net.named_parameters() if 'backbone' in name]
