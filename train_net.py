@@ -203,7 +203,7 @@ def main():
                         attribute_weights=attribute_weights)
 
     # Initialize optimizer
-    non_backbone_params = [p for name, p in net.named_parameters() if 'backbone' in name]
+    non_backbone_params = [p for name, p in net.named_parameters() if 'backbone' not in name]
     if cfg.OPTIM.OPTIMIZER == "ADAM":
         optimizer = optim.Adam(params=[
             {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
