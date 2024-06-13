@@ -10,7 +10,7 @@ import torch
 from lightning import seed_everything
 from omegaconf import OmegaConf
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
@@ -46,36 +46,42 @@ def get_lo_hi_activations(model, dataloader, hi_lo_quantiles: tuple[int, int] = 
 
 
 @torch.inference_mode()
-def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups: list[int],
-                       attribute_group_indices: np.array, train_activations: torch.Tensor | None, use_sigmoid: bool,
-                       num_corrects_fn: Callable, dataset_size: int, rng: np.random.Generator,
-                       logger: logging.Logger, writer: SummaryWriter, device: torch.device):
+def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_list: list[int],
+                       attribute_group_indices: np.array, num_corrects_fn: Callable,
+                       dataset_size: int, batch_size: int, rng: np.random.Generator, logger: logging.Logger,
+                       writer: SummaryWriter, device: torch.device):
     """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
-    num_attrs = 112
+    num_attrs = len(attribute_group_indices)
+    num_total_groups = len(np.unique(attribute_group_indices))
+    print("num_attrs:", num_attrs, "num_total_groups:", num_total_groups)
 
-    for num_groups in num_int_groups:
-        sampled_group_ids = rng.choice(np.arange(len(np.unique(attribute_group_indices))),
-                                       size=(len(dataloader), num_groups))
+    for num_int_groups in num_int_groups_list:
+        sampled_group_ids, int_masks = [], []
+        for _ in range(dataset_size):
+            group_ids = rng.choice(np.arange(num_attrs), size=num_int_groups, replace=False)
+            mask = np.isin(attribute_group_indices, sampled_group_ids).astype(int)
+            sampled_group_ids.append(group_ids)
+            int_masks.append(mask)
+
+        int_dataset = TensorDataset(torch.tensor(np.stack(sampled_group_ids)),
+                                    torch.tensor(np.stack(int_masks)))
+        int_dataloader = DataLoader(int_dataset, batch_size=batch_size)
+
         running_corrects = 0
         # Inference loop
-        for test_inputs, int_group_ids in tqdm(zip(dataloader, sampled_group_ids), total=len(dataloader)):
-            int_mask = np.isin(attribute_group_indices, int_group_ids)
-            int_mask = torch.tensor(int_mask.astype(int), device=device)
-            test_inputs = {k: v.to(device) for k, v in test_inputs.items()}
-            if not use_sigmoid:
-                int_value_indices = (torch.arange(num_attrs).to(device),
-                                     test_inputs["attr_scores"].squeeze().to(dtype=torch.long))
-                int_values = train_activations[int_value_indices]
-            else:
-                int_values = test_inputs["attr_scores"]
-            results = model.inference(test_inputs["pixel_values"], int_mask=int_mask, int_values=int_values)
+        for batch, int_batch in tqdm(zip(dataloader, int_dataloader), total=len(dataloader)):
+            _, int_masks = int_batch
+            batch = {k: v.to(device) for k, v in batch.items()}
+            int_masks = int_masks.to(device)
+            int_values = batch["attr_scores"]
+            results = model.inference(batch["pixel_values"], int_mask=int_masks, int_values=int_values)
 
-            running_corrects += num_corrects_fn(results, test_inputs)
+            running_corrects += num_corrects_fn(results, batch)
 
         # Compute accuracy
         acc = running_corrects / dataset_size
-        writer.add_scalar("Acc/intervention curve", acc, num_groups)
-        logger.info(f"Test Acc when {num_groups} attribute groups intervened: {acc:.4f}")
+        writer.add_scalar("Acc/intervention curve", acc, num_int_groups)
+        logger.info(f"Test Acc when {num_int_groups} attribute groups intervened: {acc:.4f}")
 
 
 @torch.inference_mode()
@@ -149,7 +155,7 @@ def main():
         format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[
-            logging.FileHandler(os.path.join(log_dir, "eval.log")),
+            logging.FileHandler(os.path.join(log_dir, "eval0.log")),
             logging.StreamHandler(sys.stdout),
         ],
     )
@@ -173,10 +179,10 @@ def main():
             use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
             transforms=train_transforms)
         dataloader_train = DataLoader(
-            dataset=dataset_train, batch_size=1,
+            dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
             shuffle=True, num_workers=8)
         dataloader_test = DataLoader(
-            dataset=dataset_test, batch_size=1,
+            dataset=dataset_test, batch_size=cfg.OPTIM.BATCH_SIZE,
             shuffle=True, num_workers=8)
     else:
         raise NotImplementedError
@@ -208,23 +214,20 @@ def main():
 
     # Test Accuracy
     logger.info("Start task accuracy evaluation...")
-    test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
+    # test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
 
     logger.info("Start full intervention evaluation...")
-    test_interventions_full(model=net, dataloader=dataloader_test, num_corrects_fn=compute_corrects,
-                            dataset_size=len(dataset_test), logger=logger, writer=summary_writer, device=device)
+    # test_interventions_full(model=net, dataloader=dataloader_test, num_corrects_fn=compute_corrects,
+    #                         dataset_size=len(dataset_test), logger=logger, writer=summary_writer, device=device)
 
     # Test Intervention Performance
     logger.info("Start intervention evaluation...")
-    train_activations = None
-    if not cfg.MODEL.USE_SIGMOID:
-        logger.info("Model does not use sigmoid activation, generate activations for intervention...")
-        train_activations = get_lo_hi_activations(net, dataloader_test, device=device)
 
-    num_groups_to_intervene = [4, 8, 12, 16, 20, 24, 28]
-    test_interventions(model=net, dataloader=dataloader_test, num_int_groups=num_groups_to_intervene,
+    # num_groups_to_intervene = [4, 8, 12, 16, 20, 24, 28]
+    num_groups_to_intervene = [24, 28]
+    test_interventions(model=net, dataloader=dataloader_test, num_int_groups_list=num_groups_to_intervene,
                        attribute_group_indices=dataset_train.attribute_group_indices,
-                       use_sigmoid=cfg.MODEL.USE_SIGMOID, train_activations=train_activations,
+                       batch_size=cfg.OPTIM.BATCH_SIZE,
                        num_corrects_fn=compute_corrects, dataset_size=len(dataset_test), rng=rng,
                        logger=logger, writer=summary_writer, device=device)
 

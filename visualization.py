@@ -1,8 +1,8 @@
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch import nn
-from pathlib import Path
-import matplotlib.pyplot as plt
 
 
 def visualize_multiple_epochs(experiment_dir: str):
