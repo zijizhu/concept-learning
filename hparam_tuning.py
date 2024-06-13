@@ -25,7 +25,7 @@ if __name__ == "__main__":
     for setting in product(*options_list):
         options_str_list = [f"{k}={v}" for k, v in setting]
         experiment_name = "-".join(f"{k.rsplit('.')[-1].lower()}_{v}" for k, v in setting)
-        subprocess.run(["python", "train.py",
+        subprocess.run(["python", "train_net.py",
                         "--config_path", config_path,
                         "--name", experiment_name,
                         "--options", *options_str_list])
