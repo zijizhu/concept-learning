@@ -23,11 +23,11 @@ if __name__ == "__main__":
     for opt_key, opt_val_list in hparam_dict.items():
         options_list.append([(opt_key, v) for v in opt_val_list])
     for setting in product(*options_list):
-        options_str = " ".join(f"{k}={v}" for k, v in setting)
+        options_str_list = [f"{k}={v}" for k, v in setting]
         experiment_name = "-".join(f"{k.rsplit('.')[-1].lower()}_{v}" for k, v in setting)
         subprocess.run(["python", "train.py",
                         "--config_path", config_path,
                         "--name", experiment_name,
-                        "--options", *setting])
+                        "--options", *options_str_list])
         subprocess.run(["python", "eval.py",
                         "--experiment_dir", os.path.join("logs", f"{dataset}_runs", experiment_name)])
