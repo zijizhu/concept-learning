@@ -20,10 +20,8 @@ class DevModel(nn.Module):
             self.pool = nn.MultiheadAttention(embed_dim=7*7, num_heads=1, dropout=0.1, batch_first=True)
         else:
             self.pool = nn.AdaptiveMaxPool2d((1, 1))
-        if use_sigmoid:
-            self.s = nn.Sigmoid()
-        else:
-            self.s = None
+
+        self.s = nn.Sigmoid()
 
         self.c2y = nn.Linear(num_attrs, num_classes)
 
@@ -39,8 +37,8 @@ class DevModel(nn.Module):
             attn_maps = attn_maps.view(b, self.num_attrs, h, w)
         else:
             c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
-        if self.s:
-            c = self.s(c)
+
+        c = self.s(c)
         y = self.c2y(c)
 
         # shape: [b,num_classes], [b,k], [b,k,h,w]
@@ -83,17 +81,14 @@ class DevModel(nn.Module):
 
 class DevLoss(nn.Module):
     def __init__(self, l_y_coef: float, l_c_coef: float, l_cpt_coef: float,
-                 attribute_weights: torch.Tensor = None, use_sigmoid: bool = False):
+                 attribute_weights: torch.Tensor = None):
         super().__init__()
         self.l_y_coef = l_y_coef
         self.l_c_coef = l_c_coef
         self.l_cpt_coef = l_cpt_coef
 
         self.l_y = nn.CrossEntropyLoss()
-        if use_sigmoid:
-            self.l_c = nn.BCELoss(weight=attribute_weights, reduction='sum')
-        else:
-            self.l_c = nn.BCEWithLogitsLoss(weight=attribute_weights, reduction='sum')
+        self.l_c = nn.BCELoss(weight=attribute_weights, reduction='sum')
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
         loss_dict = {

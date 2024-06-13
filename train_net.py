@@ -99,6 +99,7 @@ def val_epoch(model: nn.Module,
 def main():
     parser = argparse.ArgumentParser(description="Training Script")
     parser.add_argument("-c", "--config_path", type=str, required=True)
+    parser.add_argument("-n", "--name", type=str, required=False)
     parser.add_argument("-o", "--options", type=str, nargs="+")
 
     args = parser.parse_args()
@@ -113,13 +114,11 @@ def main():
     seed_everything(cfg.SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    multistage = cfg.OPTIM.get('BACKBONE_FT', False)
-    use_attention = cfg.MODEL.get('USE_ATTENTION', False)
-    experiment_name = (f"{cfg.MODEL.NAME}-{cfg.DATASET.NAME}"
-                       f"-{'multi' if multistage else 'single'}"
-                       f"-L_C_{cfg.MODEL.LOSSES.L_C}"
-                       f"-L_CPT_{cfg.MODEL.LOSSES.L_CPT}"
-                       f"-LR_{cfg.OPTIM.LR}-{'attn' if use_attention else 'none'}")
+    if args.name:
+        experiment_name = args.name
+    else:
+        experiment_name = f"{config_path.stem}_base"
+
     print("Experiment Name:", experiment_name)
     print("Hyperparameters:")
     print(OmegaConf.to_yaml(cfg))
@@ -129,7 +128,7 @@ def main():
     # Setup logging #
     #################
 
-    log_dir = Path("logs") / "CUB_runs" / experiment_name
+    log_dir = Path("logs") / f"{cfg.DATASET.NAME}_runs" / experiment_name
     log_dir.mkdir(parents=True, exist_ok=True)
     with open(os.path.join(log_dir, "hparams.yaml"), "w+") as fp:
         OmegaConf.save(cfg, f=fp.name)
@@ -192,64 +191,25 @@ def main():
     else:
         raise NotImplementedError
 
-    if multistage:
-        logger.info("Fine-tune backbone first, then freeze it and train other layers.")
-        backbone.fc = nn.Linear(backbone.fc.in_features, num_classes)
-        optimizer = optim.Adam(backbone.parameters(), lr=cfg.OPTIM.BACKBONE_FT.LR)
-
-        def criterion(outputs, batch_inputs):
-            loss = f.cross_entropy(outputs, batch_inputs["class_ids"])
-            return {'l_y': loss}, loss
-
-        logger.info("Start tuning backbone...")
-        backbone.to(device)
-        backbone.train()
-
-        best_epoch, best_val_acc = 0, 0.
-        for epoch in range(cfg.OPTIM.BACKBONE_FT.EPOCHS):
-            train_epoch(model=backbone, loss_fn=criterion, loss_keys=['l_y'], num_corrects_fn=compute_corrects,
-                        dataloader=dataloader_train, optimizer=optimizer, writer=summary_writer,
-                        batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train), device=device,
-                        epoch=epoch, logger=logger, model_name="backbone")
-
-            val_acc = val_epoch(model=backbone, num_corrects_fn=compute_corrects, dataloader=dataloader_val,
-                                writer=summary_writer, dataset_size=len(dataset_val), device=device,
-                                epoch=epoch, logger=logger, model_name="backbone")
-
-            # Early stopping based on validation accuracy
-            if val_acc > best_val_acc:
-                torch.save({k: v.cpu() for k, v in backbone.state_dict().items()},
-                           Path(log_dir) / f"{cfg.MODEL.BACKBONE}.pt")
-                best_val_acc = val_acc
-                best_epoch = epoch
-            if epoch >= best_epoch + 10:
-                break
-
-    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes,
-                   use_sigmoid=cfg.MODEL.USE_SIGMOID, use_attention=cfg.MODEL.USE_ATTENTION)
+    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes, use_attention=cfg.MODEL.USE_ATTENTION)
     loss_keys = ['l_y', 'l_c'] + (['l_cpt'] if cfg.MODEL.LOSSES.L_CPT > 0 else [])
     criterion = DevLoss(l_c_coef=cfg.MODEL.LOSSES.L_C,
                         l_y_coef=cfg.MODEL.LOSSES.L_Y,
                         l_cpt_coef=cfg.MODEL.LOSSES.L_CPT,
-                        attribute_weights=None,
-                        use_sigmoid=cfg.MODEL.USE_SIGMOID)
-    if use_attention:
-        optimizer = optim.SGD(params=[
-            {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
-            {"params": net.pool.parameters()},
-            {"params": net.prototype_conv.parameters()},
-            {"params": net.c2y.parameters()}
-        ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
-    else:
-        optimizer = optim.SGD(params=[
-            {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
-            {"params": net.prototype_conv.parameters()},
-            {"params": net.c2y.parameters()}
-        ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
+                        attribute_weights=cfg.MODEL.LOSSES.USE_ATTR_WEIGHTS)
 
-    if multistage:
-        for param in net.backbone.parameters():
-            param.requires_grad = False
+    # Initialize optimizer
+    non_backbone_params = [p for name, p in net.named_parameters() if 'backbone' in name]
+    if cfg.OPTIM.OPTIMIZER == "ADAM":
+        optimizer = optim.Adam(params=[
+            {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
+            {"params": non_backbone_params},
+        ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY)
+    elif cfg.OPTIM.OPTIMIZER == "SGD":
+        optimizer = optim.SGD(params=[
+            {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
+            {"params": non_backbone_params},
+        ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
 
     net.to(device)
     net.train()
@@ -277,11 +237,6 @@ def main():
         # Save prototype weights for inspection
         prototype_weights.append(net.prototype_conv.weight.detach().cpu())
         torch.save(torch.stack(prototype_weights, dim=0), Path(log_dir) / "prototype_weights.pth")
-
-        # Un-freeze backbone
-        if multistage and epoch == cfg.OPTIM.BACKBONE_FT.FREEZE_EPOCHS:
-            for param in net.backbone.parameters():
-                param.requires_grad = True
 
 
 if __name__ == "__main__":

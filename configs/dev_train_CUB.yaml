@@ -1,10 +1,10 @@
 MODEL:
-  NAME: "dev_resnet50"
-  BACKBONE: "resnet50"
+  NAME: "dev_resnet101"
+  BACKBONE: "resnet101"
   USE_SIGMOID: True
   USE_ATTENTION: False
   LOSSES:
-    L_C: 1e-2
+    L_C: 1e-1
     L_Y: 1
     L_CPT: 1e-3
     USE_ATTR_WEIGHTS: False
@@ -16,8 +16,9 @@ DATASET:
   USE_ATTR_MASK: "data/cub/attribute_names_mask.txt"
   USE_SPLITS: "data/cub/split_image_ids.npz"
 OPTIM:
+  OPTIMIZER: SGD
   LR: 1e-3
-  EPOCHS: 300
+  EPOCHS: 400
   BATCH_SIZE: 64
   WEIGHT_DECAY: 4e-4
 SEED: 42
