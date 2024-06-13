@@ -53,14 +53,13 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_
     """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
     num_attrs = len(attribute_group_indices)
     num_total_groups = len(np.unique(attribute_group_indices))
-    print("num_attrs:", num_attrs, "num_total_groups:", num_total_groups)
 
     for num_int_groups in num_int_groups_list:
         sampled_group_ids, int_masks = [], []
         for _ in range(dataset_size):
-            group_ids = rng.choice(np.arange(num_attrs), size=num_int_groups, replace=False)
-            mask = np.isin(attribute_group_indices, sampled_group_ids).astype(int)
-            sampled_group_ids.append(group_ids)
+            group_id_choices = rng.choice(np.arange(num_attrs), size=num_int_groups, replace=False)
+            mask = np.isin(attribute_group_indices, group_id_choices).astype(int)
+            sampled_group_ids.append(group_id_choices)
             int_masks.append(mask)
 
         int_dataset = TensorDataset(torch.tensor(np.stack(sampled_group_ids)),
@@ -170,20 +169,16 @@ def main():
 
         num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
         num_classes = 200
-        dataset_train = CUBDataset(
-            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val", use_attrs=cfg.DATASET.USE_ATTRS,
-            use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
-            transforms=train_transforms)
-        dataset_test = CUBDataset(
-            Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test", use_attrs=cfg.DATASET.USE_ATTRS,
-            use_attr_mask=cfg.DATASET.USE_ATTR_MASK, use_splits=cfg.DATASET.USE_SPLITS,
-            transforms=train_transforms)
-        dataloader_train = DataLoader(
-            dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
-            shuffle=True, num_workers=8)
-        dataloader_test = DataLoader(
-            dataset=dataset_test, batch_size=cfg.OPTIM.BATCH_SIZE,
-            shuffle=True, num_workers=8)
+        dataset_train = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val",
+                                   use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
+                                   use_splits=cfg.DATASET.USE_SPLITS, transforms=train_transforms)
+        dataset_test = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
+                                  use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
+                                  use_splits=cfg.DATASET.USE_SPLITS, transforms=train_transforms)
+        dataloader_train = DataLoader(dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
+                                      shuffle=True, num_workers=8)
+        dataloader_test = DataLoader(dataset=dataset_test, batch_size=cfg.OPTIM.BATCH_SIZE,
+                                     shuffle=True, num_workers=8)
     else:
         raise NotImplementedError
 
