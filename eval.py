@@ -214,7 +214,7 @@ def main():
 
     # Test Accuracy
     logger.info("Start task accuracy evaluation...")
-    test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
+    test_accuracy(net, compute_corrects, dataloader_test, len(dataset_test), device, logger)
 
     logger.info("Start full intervention evaluation...")
     test_interventions_full(model=net, dataloader=dataloader_test, num_corrects_fn=compute_corrects,
