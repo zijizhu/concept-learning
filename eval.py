@@ -214,23 +214,23 @@ def main():
 
     # Test Accuracy
     logger.info("Start task accuracy evaluation...")
-    # test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
+    test_accuracy(net, compute_corrects, dataloader_test, len(dataloader_test), device, logger)
 
     logger.info("Start full intervention evaluation...")
-    # test_interventions_full(model=net, dataloader=dataloader_test, num_corrects_fn=compute_corrects,
-    #                         dataset_size=len(dataset_test), logger=logger, writer=summary_writer, device=device)
+    test_interventions_full(model=net, dataloader=dataloader_test, num_corrects_fn=compute_corrects,
+                            dataset_size=len(dataset_test), logger=logger, writer=summary_writer, device=device)
 
     # Test Intervention Performance
     logger.info("Start intervention evaluation...")
 
-    # num_groups_to_intervene = [4, 8, 12, 16, 20, 24, 28]
-    num_groups_to_intervene = [24, 28]
+    num_groups_to_intervene = [4, 8, 12, 16, 20, 24, 28]
     test_interventions(model=net, dataloader=dataloader_test, num_int_groups_list=num_groups_to_intervene,
                        attribute_group_indices=dataset_train.attribute_group_indices,
-                       batch_size=cfg.OPTIM.BATCH_SIZE,
-                       num_corrects_fn=compute_corrects, dataset_size=len(dataset_test), rng=rng,
-                       logger=logger, writer=summary_writer, device=device)
+                       batch_size=cfg.OPTIM.BATCH_SIZE, num_corrects_fn=compute_corrects,
+                       dataset_size=len(dataset_test), rng=rng, logger=logger, writer=summary_writer, device=device)
 
+    summary_writer.flush()
+    summary_writer.close()
     logger.info("DONE!")
 
 
