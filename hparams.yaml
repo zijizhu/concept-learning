@@ -1,14 +1,9 @@
 CONFIG_PATH: "configs/dev_train_CUB.yaml"
 DATASET: "CUB"
-MODEL.L_C:
+MODEL.LOSSES.L_C:
   - 1e-1
-  - 1
-MODEL.L_CPT:
+  - 5e-1
+MODEL.LOSSES.L_CPT:
   - 1e-3
   - 1e-2
-OPTIM.OPTIMIZER:
-  - ADAM
-  - SGD
-MODEL.LOSSES.USE_ATTR_WEIGHTS:
-  - False
-  - True
+  - 1e-1

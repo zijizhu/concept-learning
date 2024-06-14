@@ -49,6 +49,7 @@ def get_transforms_dev():
             t.ColorJitter(0.1),
             t.RandomCrop(224),
             t.ToTensor(),
+            t.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
     test_transforms = ResNet101_Weights.DEFAULT.transforms()

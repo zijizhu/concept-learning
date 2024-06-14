@@ -1,7 +1,6 @@
 MODEL:
   NAME: "dev_resnet101"
   BACKBONE: "resnet101"
-  USE_SIGMOID: True
   USE_ATTENTION: False
   LOSSES:
     L_C: 1e-1
