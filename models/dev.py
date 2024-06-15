@@ -1,13 +1,12 @@
 import torch
 import torch.nn.functional as f
-from torch import nn, optim
-from torch.optim import lr_scheduler
-from torchvision.models import ResNet, ResNet101_Weights, resnet101, ResNet
+from torch import nn
+from torchvision.models import ResNet
 
 
 class DevModel(nn.Module):
     def __init__(self, backbone: ResNet, num_attrs: int, num_classes: int,
-                 use_sigmoid: bool = True, use_attention: bool = False) -> None:
+                 use_attention: bool = False) -> None:
         super().__init__()
         self.backbone = torch.nn.Sequential(*list(backbone.children())[:-2])
         self.dim = backbone.fc.in_features

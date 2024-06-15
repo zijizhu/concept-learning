@@ -195,7 +195,7 @@ def main():
         raise NotImplementedError
 
     net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes,
-                   use_sigmoid=cfg.MODEL.USE_SIGMOID, use_attention=cfg.MODEL.USE_ATTENTION)
+                   use_attention=cfg.MODEL.USE_ATTENTION)
     state_dict = torch.load(log_dir / f"{cfg.MODEL.NAME}.pth", map_location=device)
     net.load_state_dict(state_dict)
 
