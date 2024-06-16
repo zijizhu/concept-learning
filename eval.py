@@ -164,16 +164,18 @@ def main():
     #################################
 
     if cfg.DATASET.NAME == "CUB":
-        train_transforms, test_transforms = get_transforms_dev()
+        train_transforms, test_transforms = get_transforms_dev(cropped=cfg.DATASET.CROP)
 
         num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
         num_classes = 200
         dataset_train = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val",
                                    use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
-                                   use_splits=cfg.DATASET.USE_SPLITS, transforms=train_transforms)
+                                   use_splits=cfg.DATASET.USE_SPLITS, crop_image=cfg.DATASET.CROP,
+                                   transforms=train_transforms)
         dataset_test = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
                                   use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
-                                  use_splits=cfg.DATASET.USE_SPLITS, transforms=train_transforms)
+                                  use_splits=cfg.DATASET.USE_SPLITS, crop_image=cfg.DATASET.CROP,
+                                  transforms=train_transforms)
         dataloader_train = DataLoader(dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
                                       shuffle=True, num_workers=8)
         dataloader_test = DataLoader(dataset=dataset_test, batch_size=cfg.OPTIM.BATCH_SIZE,

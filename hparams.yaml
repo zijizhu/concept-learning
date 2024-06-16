@@ -1,9 +1,8 @@
 CONFIG_PATH: "configs/dev_train_CUB.yaml"
 DATASET: "CUB"
-MODEL.LOSSES.L_C:
-  - 1e-1
-  - 5e-1
-MODEL.LOSSES.L_CPT:
-  - 1e-3
-  - 1e-2
-  - 1e-1
+DATASET.TRAIN_VAL:
+  - "train/val"
+  - "train_val"
+DATASET.CROP:
+  - True
+  - False

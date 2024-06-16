@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torchvision.transforms as t
+import torchvision.transforms.functional as f
 from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
@@ -17,6 +18,7 @@ class CUBDataset(Dataset):
                  use_attrs: str | Path | np.ndarray | torch.Tensor = "binary",
                  use_attr_mask: str | Path | np.ndarray = None,
                  use_splits: str| Path | dict | None = None,
+                 crop_image: bool = False,
                  transforms: t.Compose | None = None) -> None:
         super().__init__()
         self.split = split
@@ -87,7 +89,7 @@ class CUBDataset(Dataset):
 
             attr_df = attr_df[attr_mask]
 
-        self.attributes_df = attr_df.reset_index(drop=True)
+        self.attributes_df = attr_df.reset_index(drop=False).rename(columns={'index': 'attribute_id'})
 
         # Load attribute vectors
         if use_attrs in ["binary", "continuous"]:
@@ -135,6 +137,10 @@ class CUBDataset(Dataset):
             transforms = t.ToTensor()
         self.transforms = transforms
 
+        self.crop = crop_image
+        self.bbox_ann = pd.read_csv("datasets/CUB/CUB_200_2011/bounding_boxes.txt",
+                                    header=None, names=["image_id", "x", "y", "w", "h"], sep=" ")
+
     @property
     def attribute_weights(self):
         """Compute attribute class weights following Concept Bottleneck Models"""
@@ -161,6 +167,15 @@ class CUBDataset(Dataset):
 
         path_to_image = os.path.join(self.dataset_dir, "CUB_200_2011", "images", filename)
         image = Image.open(path_to_image).convert("RGB")
+        if self.crop:
+            mask = self.bbox_ann["image_id"] == image_id
+            bbox_ann = self.bbox_ann.loc[mask, ["x", "y", "w", "h"]].to_records(index=False)
+            x, y, w, h = tuple(bbox_ann[0])
+            cx, cy = x + w / 2, y + h / 2
+            new_w = new_h = max(w, h)
+            new_x, new_y = max(cx - new_w / 2, 0), max(cy - new_h / 2, 0)
+
+            image = f.crop(image, top=int(new_y), left=int(new_x), height=int(new_h), width=int(new_w))
 
         attr_scores = self.attribute_vectors_pt[class_id]
 

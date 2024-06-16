@@ -5,7 +5,11 @@ import numpy as np
 import torch
 
 
-def visualize_multiple_epochs(experiment_dir: str):
+###############################################
+# Functions for visualizing prototype weights #
+###############################################
+
+def visualize_prototypes_multiple_epochs(experiment_dir: str | Path):
     fig, axes = plt.subplots(nrows=3, ncols=3, sharex=True, sharey=True, figsize=(12, 12))
     experiment_dir = Path(experiment_dir)
     all_prototype_weights = torch.load(experiment_dir / "prototype_weights.pth")
@@ -19,7 +23,7 @@ def visualize_multiple_epochs(experiment_dir: str):
     fig.tight_layout()
 
 
-def visualize_one_epoch(experiment_dir: str):
+def visualize_prototypes_one_epoch(experiment_dir: str | Path):
     fig, axes = plt.subplots(nrows=12, ncols=10, sharex=True, sharey=True, figsize=(12, 18))
     experiment_dir = Path(experiment_dir)
     all_prototype_weights = torch.load(experiment_dir / "prototype_weights.pth")

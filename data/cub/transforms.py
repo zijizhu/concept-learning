@@ -41,17 +41,37 @@ def get_transforms_cbm():
     return train_transforms, test_transforms
 
 
-def get_transforms_dev():
-    train_transforms = t.Compose(
-        [
-            t.Resize(size=232, antialias=True),
-            t.RandomHorizontalFlip(),
-            t.ColorJitter(0.1),
-            t.RandomCrop(224),
-            t.ToTensor(),
-            t.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-    test_transforms = ResNet101_Weights.DEFAULT.transforms()
+def get_transforms_dev(cropped=False):
+    if cropped:
+        train_transforms = t.Compose(
+            [
+                t.Resize(size=224, antialias=True),
+                t.RandomHorizontalFlip(),
+                t.ColorJitter(0.1),
+                t.RandomCrop(224),
+                t.ToTensor(),
+                t.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
+        test_transforms = t.Compose(
+            [
+                t.Resize(size=224, antialias=True),
+                t.CenterCrop(224),
+                t.ToTensor(),
+                t.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
+    else:
+        train_transforms = t.Compose(
+            [
+                t.Resize(size=232, antialias=True),
+                t.RandomHorizontalFlip(),
+                t.ColorJitter(0.1),
+                t.RandomCrop(224),
+                t.ToTensor(),
+                t.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
+        test_transforms = ResNet101_Weights.DEFAULT.transforms()
 
     return train_transforms, test_transforms

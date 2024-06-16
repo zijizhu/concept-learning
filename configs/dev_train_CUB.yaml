@@ -14,6 +14,8 @@ DATASET:
   USE_ATTRS: "data/cub/attributes.txt"
   USE_ATTR_MASK: "data/cub/attribute_names_mask.txt"
   USE_SPLITS: "data/cub/split_image_ids.npz"
+  TRAIN_VAL: "train/val"
+  CROP: False
 OPTIM:
   OPTIMIZER: SGD
   LR: 1e-3
