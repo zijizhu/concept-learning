@@ -14,11 +14,13 @@ DATASET:
   USE_ATTRS: "data/cub/attributes.txt"
   USE_ATTR_MASK: "data/cub/cbm_attribute_mask.txt"
   USE_SPLITS: "data/cub/split_image_ids.npz"
+  AUGMENTATION: None
   CROP: False
 OPTIM:
   OPTIMIZER: SGD
   LR: 1e-3
-  EPOCHS: 400
+  EPOCHS: 200
   BATCH_SIZE: 64
   WEIGHT_DECAY: 4e-4
+  EARLY_STOP: 30
 SEED: 42

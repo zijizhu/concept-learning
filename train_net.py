@@ -164,17 +164,20 @@ def main():
     #################################
 
     if cfg.DATASET.NAME == "CUB":
-        train_transforms, test_transforms = get_transforms_dev(cropped=cfg.DATASET.CROP)
+        augmentation = cfg.get("DATASET.AUGMENTATION", None)
+        train_transforms, test_transforms = get_transforms_dev(cropped=True if augmentation else False)
         num_classes = 200
         num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
         dataset_train = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val",
                                    use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
-                                   use_splits=cfg.DATASET.USE_SPLITS, crop_image=cfg.DATASET.CROP,
+                                   use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
                                    transforms=train_transforms)
+        print("Training set size:", len(dataset_train))
         dataset_val = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
                                  use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
-                                 use_splits=cfg.DATASET.USE_SPLITS, crop_image=cfg.DATASET.CROP,
+                                 use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
                                  transforms=train_transforms)
+        print("Validation set size:", len(dataset_val))
         dataloader_train = DataLoader(dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
                                       shuffle=True, num_workers=8)
         dataloader_val = DataLoader(dataset=dataset_val, batch_size=cfg.OPTIM.BATCH_SIZE, shuffle=True, num_workers=8)
@@ -222,6 +225,7 @@ def main():
     net.to(device)
     net.train()
     best_epoch, best_val_acc = 0, 0.
+    early_stopping_epochs = cfg.get("OPTIM.EARLY_STOP", 30)
     prototype_weights = []
     for epoch in range(cfg.OPTIM.EPOCHS):
         train_epoch(model=net, loss_fn=criterion, loss_keys=loss_keys, num_corrects_fn=compute_corrects,
@@ -239,7 +243,7 @@ def main():
                        Path(log_dir) / f"{cfg.MODEL.NAME}.pth")
             best_val_acc = val_acc
             best_epoch = epoch
-        if epoch >= best_epoch + 30:
+        if epoch >= best_epoch + early_stopping_epochs:
             break
 
         # Save prototype weights for inspection

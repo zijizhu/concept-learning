@@ -26,7 +26,6 @@ class CUBDataset(Dataset):
                  use_attrs: str | Path | np.ndarray | torch.Tensor = "binary",
                  use_attr_mask: str | Path | np.ndarray = None,
                  use_splits: str | Path | dict | None = None,
-                 crop_image: bool = False,
                  transforms: t.Compose | None = None) -> None:
         super().__init__()
         self.split = split
@@ -145,23 +144,24 @@ class CUBDataset(Dataset):
             transforms = t.ToTensor()
         self.transforms = transforms
 
-        self.crop = crop_image
         bbox_df = pd.read_csv("datasets/CUB/CUB_200_2011/bounding_boxes.txt",
                               header=None, names=["image_id", "x", "y", "w", "h"], sep=" ")
         bbox_df["image_id"] -= 1
         self.bbox_ann = bbox_df[["x", "y", "w", "h"]].itertuples(index=False, name=None)
 
         if use_augmentation:
-            assert use_augmentation in ["crop", "full"]
+            assert use_augmentation in ["crop", "augmentor"]
             if use_augmentation == "crop":
                 self.main_df["filename"] = self.main_df["filename"].apply(map_fn_to_crop_fn)
-            else:  # use_augmentation == "full"
+            elif use_augmentation == "augmentor":  # use_augmentation == "full"
                 self.main_df["filename"] = self.main_df["filename"].apply(map_fn_to_crop_fn)
                 augmented_train_df = get_augmented_train_df(Path(self.dataset_dir) / "CUB_200_2011" / "images",
                                                             self.main_df[self.main_df["is_train"] == 1])
                 self.main_df = pd.concat([self.main_df, augmented_train_df], axis=0, ignore_index=True)
                 self.image_ids["train"] = self.main_df[self.main_df["is_train"] == 1].index.to_list()
                 self.image_ids["train_val"] = self.main_df[self.main_df["is_train"] == 1].index.to_list()
+            else:
+                raise NotImplementedError
 
     @property
     def attribute_weights(self):
@@ -189,13 +189,6 @@ class CUBDataset(Dataset):
 
         path_to_image = os.path.join(self.dataset_dir, "CUB_200_2011", "images", filename)
         image = Image.open(path_to_image).convert("RGB")
-        if self.crop:
-            x, y, w, h = self.bbox_ann[image_id]
-            cx, cy = x + w / 2, y + h / 2
-            new_w = new_h = max(w, h)
-            new_x, new_y = max(cx - new_w / 2, 0), max(cy - new_h / 2, 0)
-
-            image = f.crop(image, top=int(new_y), left=int(new_x), height=int(new_h), width=int(new_w))
 
         attr_scores = self.attribute_vectors_pt[class_id]
 
