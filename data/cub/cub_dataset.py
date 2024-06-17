@@ -105,7 +105,7 @@ class CUBDataset(Dataset):
                              "class_attribute_labels_continuous.txt"))
             attr_vectors /= 100
 
-            if attr_mask:
+            if attr_mask is not None:
                 attr_vectors = attr_vectors[:, attr_mask]
 
             if use_attrs == "binary":
