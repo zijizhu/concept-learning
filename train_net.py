@@ -216,6 +216,8 @@ def main():
             {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
             {"params": non_backbone_params},
         ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
+    else:
+        raise NotImplementedError
 
     net.to(device)
     net.train()

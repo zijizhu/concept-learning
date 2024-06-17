@@ -48,7 +48,7 @@ if __name__ == '__main__':
         p = Augmentor.Pipeline(source_directory=str(in_dir), output_directory=out_dir.name)
         p.rotate(probability=1, max_left_rotation=15, max_right_rotation=15)
         p.flip_left_right(probability=0.5)
-        for _ in range(1):
+        for _ in range(10):
             p.process()
         del p
 
@@ -56,7 +56,7 @@ if __name__ == '__main__':
         p = Augmentor.Pipeline(source_directory=str(in_dir), output_directory=out_dir.name)
         p.skew(probability=1, magnitude=0.2)
         p.flip_left_right(probability=0.5)
-        for _ in range(1):
+        for _ in range(10):
             p.process()
         del p
 
@@ -64,7 +64,7 @@ if __name__ == '__main__':
         p = Augmentor.Pipeline(source_directory=str(in_dir), output_directory=out_dir.name)
         p.shear(probability=1, max_shear_left=10, max_shear_right=10)
         p.flip_left_right(probability=0.5)
-        for _ in range(1):
+        for _ in range(10):
             p.process()
         del p
 
@@ -72,7 +72,7 @@ if __name__ == '__main__':
         p = Augmentor.Pipeline(source_directory=str(in_dir), output_directory=out_dir.name)
         p.random_distortion(probability=1.0, grid_width=10, grid_height=10, magnitude=5)
         p.flip_left_right(probability=0.5)
-        for _ in range(1):
+        for _ in range(10):
             p.process()
         del p
         
