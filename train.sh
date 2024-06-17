@@ -2,7 +2,7 @@
 
 set -x
 
-python train_net. --name dev_train_CUB --config_path configs/dev_train_CUB.yaml
+python train_net.py --name dev_train_CUB --config_path configs/dev_train_CUB.yaml
 python eval.py -e logs/CUB_runs/dev_train_CUB
 python train_net.py --name dev_train_CUB_custom --config_path configs/dev_train_CUB_custom.yaml
 python eval.py -e logs/CUB_runs/dev_train_CUB_custom
