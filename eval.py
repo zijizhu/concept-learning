@@ -168,13 +168,14 @@ def main():
 
         num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
         num_classes = 200
+        use_crop = cfg.get("DATASET.CROP", False)
         dataset_train = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val",
                                    use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
-                                   use_splits=cfg.DATASET.USE_SPLITS, crop_image=cfg.DATASET.CROP,
+                                   use_splits=cfg.DATASET.USE_SPLITS, crop_image=use_crop,
                                    transforms=train_transforms)
         dataset_test = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
                                   use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
-                                  use_splits=cfg.DATASET.USE_SPLITS, crop_image=cfg.DATASET.CROP,
+                                  use_splits=cfg.DATASET.USE_SPLITS, crop_image=use_crop,
                                   transforms=train_transforms)
         dataloader_train = DataLoader(dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
                                       shuffle=True, num_workers=8)

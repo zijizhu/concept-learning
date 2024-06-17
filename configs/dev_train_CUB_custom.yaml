@@ -9,12 +9,11 @@ MODEL:
     USE_ATTR_WEIGHTS: False
 DATASET:
   NAME: "CUB"
-  NUM_ATTRS: 112
+  NUM_ATTRS: 278
   ROOT_DIR: "datasets"
-  USE_ATTRS: "data/cub/attributes.txt"
-  USE_ATTR_MASK: "data/cub/cbm_attribute_mask.txt"
+  USE_ATTRS: "binary"
+  USE_ATTR_MASK: "data/cub/part_specific_attribute_mask.txt"
   USE_SPLITS: "data/cub/split_image_ids.npz"
-  TRAIN_VAL: "train/val"
   CROP: False
 OPTIM:
   OPTIMIZER: SGD

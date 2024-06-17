@@ -30,8 +30,8 @@ part_map_fine = {'back': "back",
 if __name__ == "__main__":
     parts_name_path = Path("datasets/CUB/CUB_200_2011/parts/parts.txt")
     with open(parts_name_path, "r") as fp:
-        lines = fp.read().splitlines()
-    original_part_names = [l.split(" ", 1)[1] for l in lines]
+        all_lines = fp.read().splitlines()
+    original_part_names = [line.split(" ", 1)[1] for line in all_lines]
 
     part_name_map = {'back': "back",
                      'beak': "head",
@@ -84,7 +84,7 @@ if __name__ == "__main__":
             if part_keypoints.shape[0] == 0:
                 img_keypoint_anns_processed.append(None)
             else:
-                img_keypoint_anns_processed.append(part_keypoints)
+                img_keypoint_anns_processed.append(tuple(np.squeeze(part_keypoints)))
         all_keypoint_anns[img_id] = img_keypoint_anns_processed
 
     attr_part_map = {}
@@ -93,7 +93,7 @@ if __name__ == "__main__":
             attr_part_map[aid] = part_name
 
     attr_part_keypoint_anns = {
-        "attr_part_map": attr_part_map,
+        "attribute_part_map": attr_part_map,
         "original_part_names": original_part_names,
         "processed_part_names": processed_part_names,
         "part_name_map": part_name_map,
@@ -101,5 +101,5 @@ if __name__ == "__main__":
         "keypoint_annotations": all_keypoint_anns
     }
 
-    with open("data/cub/attr_part_keypoint_anns.pkl", "wb") as fp:
+    with open("data/cub/keypoint_annotations.pkl", "wb") as fp:
         pkl.dump(attr_part_keypoint_anns, fp)

@@ -10,14 +10,22 @@ from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 
+from .augment import get_augmented_train_df
+
+
+def map_fn_to_crop_fn(fn: str):
+    parent, name = fn.split("/")
+    return os.path.join(parent, "cropped", name)
+
 
 class CUBDataset(Dataset):
     def __init__(self,
                  dataset_dir: str | Path,
                  split: str = "train",
+                 use_augmentation: str | None = None,
                  use_attrs: str | Path | np.ndarray | torch.Tensor = "binary",
                  use_attr_mask: str | Path | np.ndarray = None,
-                 use_splits: str| Path | dict | None = None,
+                 use_splits: str | Path | dict | None = None,
                  crop_image: bool = False,
                  transforms: t.Compose | None = None) -> None:
         super().__init__()
@@ -138,8 +146,22 @@ class CUBDataset(Dataset):
         self.transforms = transforms
 
         self.crop = crop_image
-        self.bbox_ann = pd.read_csv("datasets/CUB/CUB_200_2011/bounding_boxes.txt",
-                                    header=None, names=["image_id", "x", "y", "w", "h"], sep=" ")
+        bbox_df = pd.read_csv("datasets/CUB/CUB_200_2011/bounding_boxes.txt",
+                              header=None, names=["image_id", "x", "y", "w", "h"], sep=" ")
+        bbox_df["image_id"] -= 1
+        self.bbox_ann = bbox_df[["x", "y", "w", "h"]].itertuples(index=False, name=None)
+
+        if use_augmentation:
+            assert use_augmentation in ["crop", "full"]
+            if use_augmentation == "crop":
+                self.main_df["filename"] = self.main_df["filename"].apply(map_fn_to_crop_fn)
+            else:  # use_augmentation == "full"
+                self.main_df["filename"] = self.main_df["filename"].apply(map_fn_to_crop_fn)
+                augmented_train_df = get_augmented_train_df(Path(self.dataset_dir) / "CUB_200_2011" / "images",
+                                                            self.main_df[self.main_df["is_train"] == 1])
+                self.main_df = pd.concat([self.main_df, augmented_train_df], axis=0, ignore_index=True)
+                self.image_ids["train"] = self.main_df[self.main_df["is_train"] == 1].index.to_list()
+                self.image_ids["train_val"] = self.main_df[self.main_df["is_train"] == 1].index.to_list()
 
     @property
     def attribute_weights(self):
@@ -168,9 +190,7 @@ class CUBDataset(Dataset):
         path_to_image = os.path.join(self.dataset_dir, "CUB_200_2011", "images", filename)
         image = Image.open(path_to_image).convert("RGB")
         if self.crop:
-            mask = self.bbox_ann["image_id"] == image_id
-            bbox_ann = self.bbox_ann.loc[mask, ["x", "y", "w", "h"]].to_records(index=False)
-            x, y, w, h = tuple(bbox_ann[0])
+            x, y, w, h = self.bbox_ann[image_id]
             cx, cy = x + w / 2, y + h / 2
             new_w = new_h = max(w, h)
             new_x, new_y = max(cx - new_w / 2, 0), max(cy - new_h / 2, 0)
