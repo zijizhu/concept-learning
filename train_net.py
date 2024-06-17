@@ -164,10 +164,10 @@ def main():
     #################################
 
     if cfg.DATASET.NAME == "CUB":
-        augmentation = cfg.get("DATASET.AUGMENTATION", None)
+        augmentation = cfg.DATASET.get("AUGMENTATION", None)
         train_transforms, test_transforms = get_transforms_dev(cropped=True if augmentation else False)
         num_classes = 200
-        num_attrs = cfg.get("DATASET.NUM_ATTRS", 112)
+        num_attrs = cfg.DATASET.get("NUM_ATTRS", 112)
         dataset_train = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val",
                                    use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
                                    use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
@@ -225,7 +225,7 @@ def main():
     net.to(device)
     net.train()
     best_epoch, best_val_acc = 0, 0.
-    early_stopping_epochs = cfg.get("OPTIM.EARLY_STOP", 30)
+    early_stopping_epochs = cfg.OPTIM.get("EARLY_STOP", 30)
     prototype_weights = []
     for epoch in range(cfg.OPTIM.EPOCHS):
         train_epoch(model=net, loss_fn=criterion, loss_keys=loss_keys, num_corrects_fn=compute_corrects,
