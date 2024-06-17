@@ -24,7 +24,7 @@ class CUBDataset(Dataset):
                  split: str = "train",
                  use_augmentation: str | None = None,
                  use_attrs: str | Path | np.ndarray | torch.Tensor = "binary",
-                 use_attr_mask: str | Path | np.ndarray = None,
+                 use_attr_mask: str | Path | np.ndarray | bool = False,
                  use_splits: str | Path | dict | None = None,
                  transforms: t.Compose | None = None) -> None:
         super().__init__()
