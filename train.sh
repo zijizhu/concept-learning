@@ -2,31 +2,14 @@
 
 set -x
 
-python train_net.py --config_path configs/dev_train_multistage_CUB.yaml
-python train_net.py --config_path configs/dev_train_CUB.yaml
+python train_net. --name dev_train_CUB --config_path configs/dev_train_CUB.yaml
+python train_net.py --name dev_train_CUB_custom --config_path configs/dev_train_CUB_custom.yaml
+python train_net.py --name dev_train_CUB_full --config_path configs/dev_train_CUB_full.yaml
 
-python train_net.py --config_path configs/dev_train_multistage_CUB.yaml --options MODEL.LOSSES.L_C=1e-1
-python train_net.py --config_path configs/dev_train_CUB.yaml --options MODEL.LOSSES.L_C=1e-1
+python train_net.py --name dev_train_CUB_augmentor --config_path configs/dev_train_CUB.yaml --options DATASET.AUGMENTATION=augmentor OPTIM.EPOCHS=30 OPTIM.EARLY_STOP=5
+python train_net.py --name dev_train_CUB_custom_augmentor --config_path configs/dev_train_CUB_custom.yaml --options DATASET.AUGMENTATION=augmentor OPTIM.EPOCHS=30 OPTIM.EARLY_STOP=5
+python train_net.py --name dev_train_CUB_full_augmentor --config_path configs/dev_train_CUB_full.yaml --options DATASET.AUGMENTATION=augmentor OPTIM.EPOCHS=30 OPTIM.EARLY_STOP=5
 
-python train_net.py --config_path configs/dev_train_multistage_CUB.yaml --options MODEL.LOSSES.L_CPT=1e-3
-python train_net.py --config_path configs/dev_train_CUB.yaml --options MODEL.LOSSES.L_CPT=1e-3
-
-python train_net.py --config_path configs/dev_train_multistage_CUB.yaml --options MODEL.USE_ATTENTION=True
-python train_net.py --config_path configs/dev_train_CUB.yaml --options MODEL.USE_ATTENTION=True
-
-python train_net.py --config_path configs/dev_train_multistage_CUB.yaml --options MODEL.LOSSES.L_C=1e-1 MODEL.LOSSES.L_CPT=1e-3
-python train_net.py --config_path configs/dev_train_CUB.yaml --options MODEL.LOSSES.L_C=1e-1 MODEL.LOSSES.L_CPT=1e-3
-
-python train_net.py --config_path configs/dev_train_multistage_CUB.yaml --options MODEL.LOSSES.L_C=1e-1 MODEL.USE_ATTENTION=True
-python train_net.py --config_path configs/dev_train_CUB.yaml --options MODEL.LOSSES.L_C=1e-1 MODEL.USE_ATTENTION=True
-
-python train_net.py --config_path configs/dev_train_multistage_CUB.yaml --options MODEL.LOSSES.L_CPT=1e-3 MODEL.USE_ATTENTION=True
-python train_net.py --config_path configs/dev_train_CUB.yaml --options MODEL.LOSSES.L_CPT=1e-3 MODEL.USE_ATTENTION=True
-
-python train_net.py --config_path configs/dev_train_multistage_CUB.yaml --options MODEL.LOSSES.L_C=1e-1 MODEL.LOSSES.L_CPT=1e-3 MODEL.USE_ATTENTION=True
-python train_net.py --config_path configs/dev_train_CUB.yaml --options MODEL.LOSSES.L_C=1e-1 MODEL.LOSSES.L_CPT=1e-3 MODEL.USE_ATTENTION=True
-
-
-
-python train_net.py --config_path configs/dev_train_multistage_CUB.yaml --options MODEL.NAME="dev_resnet101" MODEL.BACKBONE="resnet101"
-python train_net.py --config_path configs/dev_train_CUB.yaml --options MODEL.NAME="dev_resnet101" MODEL.BACKBONE="resnet101"
+python train_net.py --name dev_train_CUB_crop --config_path configs/dev_train_CUB.yaml --options DATASET.AUGMENTATION=crop
+python train_net.py --name dev_train_CUB_custom_crop --config_path configs/dev_train_CUB_custom.yaml --options DATASET.AUGMENTATION=crop
+python train_net.py --name dev_train_CUB_custom_crop --config_path configs/dev_train_CUB_full.yaml --options DATASET.AUGMENTATION=crop

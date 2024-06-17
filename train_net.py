@@ -243,6 +243,7 @@ def main():
                        Path(log_dir) / f"{cfg.MODEL.NAME}.pth")
             best_val_acc = val_acc
             best_epoch = epoch
+            logger.info("Best epoch found, model saved!")
         if epoch >= best_epoch + early_stopping_epochs:
             break
 
