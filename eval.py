@@ -227,8 +227,13 @@ def main():
     # Test Attribute and Part Localization Performance
     with open(Path("data") / "cub" / "keypoint_annotations.pkl", "rb") as fp:
         keypoint_annotations = pkl.load(fp)
-    dataset_test.transforms = None
-    loc_eval(keypoint_annotations, net, dataset_test, log_dir,
+
+    dataset_test_no_transform = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
+                                           use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
+                                           use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
+                                           transforms=None)
+
+    loc_eval(keypoint_annotations, net, dataset_test_no_transform, log_dir,
              cropped=True if augmentation else False, bbox_size=90, device=device)
 
     summary_writer.flush()

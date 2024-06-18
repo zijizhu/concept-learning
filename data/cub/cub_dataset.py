@@ -192,7 +192,10 @@ class CUBDataset(Dataset):
 
         attr_scores = self.attribute_vectors_pt[class_id]
 
-        pixel_values = self.transforms(image)
+        if self.transforms is not None:
+            pixel_values = self.transforms(image)
+        else:
+            pixel_values = image
 
         return {
             "image_ids": torch.tensor(image_id, dtype=torch.long),

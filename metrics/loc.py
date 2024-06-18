@@ -31,6 +31,7 @@ def loc_eval(keypoint_annotations: dict,
              cropped: bool = False,
              bbox_size: int = 90,
              device: torch.device = torch.device("cpu")):
+    """dataset_test is expected to pixel_values produced by only pil_to_tensor without any other transforms"""
     transforms = A.Compose([A.Resize(height=232, width=232),
                             A.CenterCrop(height=224, width=224),
                             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])],
