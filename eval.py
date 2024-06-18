@@ -160,6 +160,7 @@ def main():
             logging.FileHandler(os.path.join(log_dir, "eval.log")),
             logging.StreamHandler(sys.stdout),
         ],
+        force=True,
     )
     logger = logging.getLogger(__name__)
 
