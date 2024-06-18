@@ -1,5 +1,4 @@
 from pathlib import Path
-import logging
 
 import albumentations as A
 import cv2
@@ -29,7 +28,7 @@ def loc_eval(keypoint_annotations: dict,
              model: nn.Module,
              dataset_test: CUBDataset,
              output_dir: str | Path,
-             logger: logging.Logger,
+             logger,
              cropped: bool = False,
              bbox_size: int = 90,
              device: torch.device = torch.device("cpu")):
