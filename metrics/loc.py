@@ -98,7 +98,7 @@ def loc_eval(keypoint_annotations: dict,
         outputs = model(image_input)  # type: dict[str, torch.Tensor]
 
         # Interpolate the attention map to input size of the model
-        attn_maps = outputs["attn_maps"].detach().squeeze().numpy().transpose(1, 2, 0)  # type: np.ndarray
+        attn_maps = outputs["attn_maps"].detach().cpu().squeeze().numpy().transpose(1, 2, 0)  # type: np.ndarray
         attn_maps_interpolated = cv2.resize(attn_maps, (224, 224))
 
         # Loop through all attribute ids in dataset, no matter whether they are used for training
