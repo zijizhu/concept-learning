@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 
 from .augment import get_augmented_train_df
+from .constants import PART_GROUPS
 
 
 def map_fn_to_crop_fn(fn: str):
@@ -163,6 +164,16 @@ class CUBDataset(Dataset):
             else:
                 raise NotImplementedError
 
+        self.part_names = sorted(k for k in PART_GROUPS.keys() if k != "others") + ["others"]
+        part_indices = []
+        for i in range(312):
+            for p in self.part_names:
+                if i in PART_GROUPS[p]:
+                    part_indices.append(self.part_names.index(p))
+        if attr_mask is not None:
+            part_indices = part_indices[attr_mask]
+        self.part_indices = np.array(part_indices)
+
     @property
     def attribute_weights(self):
         """Compute attribute class weights following Concept Bottleneck Models"""
@@ -173,6 +184,10 @@ class CUBDataset(Dataset):
     @property
     def attribute_group_indices_pt(self):
         return torch.tensor(self.attribute_group_indices, dtype=torch.long)
+
+    @property
+    def part_indices_pt(self):
+        return torch.tensor(self.part_indices, dtype=torch.long)
 
     @property
     def attribute_vectors_pt(self):

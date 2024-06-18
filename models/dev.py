@@ -44,7 +44,8 @@ class DevModel(nn.Module):
         return {
             "class_scores": y,
             "attr_scores": c,
-            "attn_maps": attn_maps
+            "attn_maps": attn_maps,
+            "prototypes": self.prototype_conv.weight.squeeze(),
         }
 
     @torch.inference_mode()
@@ -74,20 +75,25 @@ class DevModel(nn.Module):
         return {
             "attr_scores": c,
             "class_scores": y,
-            "attn_maps": attn_maps
+            "attn_maps": attn_maps,
+            "prototypes": self.prototype_conv.weight.squeeze(),
         }
 
 
 class DevLoss(nn.Module):
     def __init__(self, l_y_coef: float, l_c_coef: float, l_cpt_coef: float,
+                 l_dec_coef: float, group_indices: torch.Tensor = None,
                  attribute_weights: torch.Tensor = None):
         super().__init__()
         self.l_y_coef = l_y_coef
         self.l_c_coef = l_c_coef
         self.l_cpt_coef = l_cpt_coef
+        self.l_dec_coef = l_dec_coef
 
         self.l_y = nn.CrossEntropyLoss()
         self.l_c = nn.BCELoss(weight=attribute_weights, reduction='sum')
+
+        self.group_indices = group_indices
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
         loss_dict = {
@@ -96,6 +102,8 @@ class DevLoss(nn.Module):
         }
         if self.l_cpt_coef > 0:
             loss_dict["l_cpt"] = self.l_cpt_coef * self.l_cpt(outputs["attn_maps"])
+        if self.l_dec_coef > 0:
+            loss_dict["l_dec"] = self.l_dec_coef * self.l_dec(outputs["prototypes"])
         l_total = sum(loss_dict.values())
         return loss_dict, l_total
 
@@ -119,12 +127,11 @@ class DevLoss(nn.Module):
 
         return torch.mean(losses)
 
-    @staticmethod
-    def l_dec(prototypes: torch.Tensor, group_ids: torch.Tensor):
+    def l_dec(self, prototypes: torch.Tensor):
         """Loss function for decorrelation of attribute groups"""
-        all_group_losses = []
-        for i in torch.unique(group_ids):
-            mask = group_ids == i
-            group_loss = prototypes[mask, :].pow(2).sum().sqrt()
-            all_group_losses.append(group_loss)
-        return sum(all_group_losses)
+        group_losses = []
+        for idx in self.group_indices.unique():
+            mask = self.group_indices == idx
+            loss = prototypes[mask, :].pow(2).sum(dim=0).add(1e-8).sum().pow(1/2.)
+            group_losses.append(loss)
+        return sum(group_losses)
