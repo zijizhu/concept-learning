@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Callable
 
 import torch
-import torch.nn.functional as f
 from lightning import seed_everything
 from omegaconf import OmegaConf
 from torch import nn

@@ -11,6 +11,16 @@ import pandas as pd
 from PIL import Image
 from tqdm import tqdm
 
+
+def bbox_to_square_bbox(xywh: tuple):
+    x, y, w, h = xywh
+    cx, cy = x + w / 2, y + h / 2
+    new_w = new_h = max(w, h) + 20
+    new_x, new_y = max(cx - new_w / 2, 0), max(cy - new_h / 2, 0)
+
+    return int(new_x), int(new_y), int(new_x + new_w), int(new_y + new_h)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Script to crop images")
     parser.add_argument("--dataset_dir", type=str, help="Path to the dataset directory")
@@ -35,11 +45,8 @@ if __name__ == "__main__":
             filename = f"{directory.name}/{fn.name}"
 
             bbox = merged_df.loc[merged_df["filename"] == filename, ["x", "y", "w", "h"]].values
-            x, y, w, h = np.squeeze(bbox)
+            bbox = np.squeeze(bbox)
+            x_min, y_min, x_max, y_max = bbox_to_square_bbox(bbox)
 
-            cx, cy = x + w / 2, y + h / 2
-            new_w = new_h = max(w, h) + 20
-            new_x, new_y = max(cx - new_w / 2, 0), max(cy - new_h / 2, 0)
-
-            image_cropped = image.crop((new_x, new_y, new_x + new_w, new_y + new_h,))
+            image_cropped = image.crop((x_min, y_min, x_max, y_max,))
             image_cropped.save(out_dir / fn.name)

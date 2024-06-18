@@ -14,8 +14,7 @@ DATASET:
   USE_ATTRS: "binary"
   USE_ATTR_MASK: False
   USE_SPLITS: "data/cub/split_image_ids.npz"
-#  AUGMENTATION: "crop"
-  CROP: False
+  AUGMENTATION: null
 OPTIM:
   OPTIMIZER: SGD
   LR: 1e-3

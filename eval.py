@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+import pickle as pkl
 from typing import Callable
 
 import numpy as np
@@ -17,6 +18,7 @@ from tqdm import tqdm
 from data.cub.cub_dataset import CUBDataset
 from data.cub.transforms import get_transforms_dev
 from models.dev import DevModel
+from metrics.loc import loc_eval
 
 
 @torch.no_grad()
@@ -78,7 +80,7 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_
 
         # Compute accuracy
         acc = running_corrects / dataset_size
-        writer.add_scalar("Acc/intervention curve", acc, num_int_groups)
+        writer.add_scalar("Intervention curve", acc, num_int_groups)
         logger.info(f"Test Acc when {num_int_groups} attribute groups intervened: {acc:.4f}")
 
 
@@ -142,7 +144,7 @@ def main():
     # Setup logging #
     #################
 
-    summary_writer = SummaryWriter(log_dir=str(log_dir), comment="eval")
+    summary_writer = SummaryWriter(log_dir=str(log_dir))
     summary_writer.add_text("Model", cfg.MODEL.NAME)
     summary_writer.add_text("Dataset", cfg.DATASET.NAME)
     summary_writer.add_text("Seed", str(cfg.SEED))
@@ -164,15 +166,17 @@ def main():
     #################################
 
     if cfg.DATASET.NAME == "CUB":
-        train_transforms, test_transforms = get_transforms_dev(cropped=cfg.DATASET.CROP)
+        augmentation = cfg.DATASET.get("AUGMENTATION", None)
+        train_transforms, test_transforms = get_transforms_dev(cropped=True if augmentation else False)
 
         num_attrs = cfg.DATASET.get("NUM_ATTRS", 112)
-        augmentation = cfg.DATASET.get("AUGMENTATION", None)
+
         num_classes = 200
+        # Loads cropped test images if model trained with aug
         dataset_test = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
                                   use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
                                   use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
-                                  transforms=train_transforms)  # Loads cropped test images if model trained with aug
+                                  transforms=test_transforms)
         dataloader_test = DataLoader(dataset=dataset_test, batch_size=cfg.OPTIM.BATCH_SIZE,
                                      shuffle=True, num_workers=8)
     else:
@@ -219,6 +223,13 @@ def main():
                        attribute_group_indices=dataset_test.attribute_group_indices,
                        batch_size=cfg.OPTIM.BATCH_SIZE, num_corrects_fn=compute_corrects,
                        dataset_size=len(dataset_test), rng=rng, logger=logger, writer=summary_writer, device=device)
+
+    # Test Attribute and Part Localization Performance
+    with open(Path("data") / "cub" / "keypoint_annotations.pkl", "rb") as fp:
+        keypoint_annotations = pkl.load(fp)
+    dataset_test.transforms = None
+    loc_eval(keypoint_annotations, net, dataset_test, augmentation=True if augmentation else False,
+             bbox_size=90, device=device)
 
     summary_writer.flush()
     summary_writer.close()

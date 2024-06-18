@@ -147,7 +147,7 @@ class CUBDataset(Dataset):
         bbox_df = pd.read_csv("datasets/CUB/CUB_200_2011/bounding_boxes.txt",
                               header=None, names=["image_id", "x", "y", "w", "h"], sep=" ")
         bbox_df["image_id"] -= 1
-        self.bbox_ann = bbox_df[["x", "y", "w", "h"]].itertuples(index=False, name=None)
+        self.bbox_ann = list(bbox_df[["x", "y", "w", "h"]].itertuples(index=False, name=None))
 
         if use_augmentation:
             assert use_augmentation in ["crop", "augmentor"]
