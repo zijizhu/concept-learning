@@ -56,6 +56,8 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_
     num_total_groups = len(np.unique(attribute_group_indices))
 
     for num_int_groups in num_int_groups_list:
+        if num_int_groups > num_total_groups:
+            continue
         sampled_group_ids, int_masks = [], []
         for _ in range(dataset_size):
             group_id_choices = rng.choice(np.arange(num_total_groups), size=num_int_groups, replace=False)
