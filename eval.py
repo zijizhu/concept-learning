@@ -235,7 +235,7 @@ def main():
                                            use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
                                            transforms=None)
 
-    loc_eval(keypoint_annotations, net, dataset_test_no_transform, log_dir,
+    loc_eval(keypoint_annotations, net, dataset_test_no_transform, log_dir, logger,
              cropped=True if augmentation else False, bbox_size=90, device=device)
 
     summary_writer.flush()

@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 
 import albumentations as A
 import cv2
@@ -11,10 +12,6 @@ from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
 from data.cub.crop import bbox_to_square_bbox
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 def in_bbox(point: tuple[float, float], bbox: tuple[float, float, float, float]) -> bool:
@@ -32,6 +29,7 @@ def loc_eval(keypoint_annotations: dict,
              model: nn.Module,
              dataset_test: CUBDataset,
              output_dir: str | Path,
+             logger: logging.Logger,
              cropped: bool = False,
              bbox_size: int = 90,
              device: torch.device = torch.device("cpu")):
