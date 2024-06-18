@@ -167,10 +167,11 @@ def main():
         train_transforms, test_transforms = get_transforms_dev(cropped=cfg.DATASET.CROP)
 
         num_attrs = cfg.DATASET.get("NUM_ATTRS", 112)
+        augmentation = cfg.DATASET.get("AUGMENTATION", None)
         num_classes = 200
         dataset_test = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
                                   use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
-                                  use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=cfg.DATASET.AUGMENTATION,
+                                  use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
                                   transforms=train_transforms)  # Loads cropped test images if model trained with aug
         dataloader_test = DataLoader(dataset=dataset_test, batch_size=cfg.OPTIM.BATCH_SIZE,
                                      shuffle=True, num_workers=8)
