@@ -228,8 +228,8 @@ def main():
     with open(Path("data") / "cub" / "keypoint_annotations.pkl", "rb") as fp:
         keypoint_annotations = pkl.load(fp)
     dataset_test.transforms = None
-    loc_eval(keypoint_annotations, net, dataset_test, augmentation=True if augmentation else False,
-             bbox_size=90, device=device)
+    loc_eval(keypoint_annotations, net, dataset_test, log_dir,
+             cropped=True if augmentation else False, bbox_size=90, device=device)
 
     summary_writer.flush()
     summary_writer.close()
