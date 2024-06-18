@@ -221,6 +221,8 @@ def main():
     else:
         raise NotImplementedError
 
+    scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=cfg.OPTIM.STEP_SIZE, gamma=cfg.OPTIM.GAMMA)
+
     net.to(device)
     net.train()
     best_epoch, best_val_acc = 0, 0.
@@ -249,6 +251,8 @@ def main():
         # Save prototype weights for inspection
         prototype_weights.append(net.prototype_conv.weight.detach().cpu())
         torch.save(torch.stack(prototype_weights, dim=0), Path(log_dir) / "prototype_weights.pth")
+
+        scheduler.step()
 
 
 if __name__ == "__main__":

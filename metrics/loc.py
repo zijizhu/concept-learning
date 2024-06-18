@@ -12,6 +12,10 @@ from tqdm import tqdm
 from data.cub.cub_dataset import CUBDataset
 from data.cub.crop import bbox_to_square_bbox
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def in_bbox(point: tuple[float, float], bbox: tuple[float, float, float, float]) -> bool:
     cx, cy, h, w = bbox
@@ -52,7 +56,6 @@ def loc_eval(keypoint_annotations: dict,
     part_total = {p: 0 for p in part_name_list}
 
     bbox_annotations = dataset_test.bbox_ann
-    print(bbox_annotations)
 
     for sample in tqdm(dataset_test):
         # Get visible part keypoints of the image
@@ -116,7 +119,7 @@ def loc_eval(keypoint_annotations: dict,
             # Get the coordinate of max attention of the attribute
             # Check if the ground truth keypoint of the attribute is inside the bounding box around the coordinate
             attr_attn_map = attn_maps_interpolated[:, :, attn_map_idx]
-            x, y = np.unravel_index(np.argmax(attr_attn_map), attr_attn_map.shape)
+            y, x = np.unravel_index(np.argmax(attr_attn_map), attr_attn_map.shape)  # Note: y, x
             bbox = (x, y, bbox_size, bbox_size,)
 
             if in_bbox(attr_keypoint_label, bbox):
@@ -142,9 +145,9 @@ def loc_eval(keypoint_annotations: dict,
 
     attribute_df.to_csv(Path(output_dir) / "attribute_df.csv")
 
-    pd.DataFrame([part_corrects, part_total],
-                 columns=[part_name_list],
-                 index=["correct", "total"]).to_csv(Path(output_dir) / "part_localization_results.csv")
+    part_result_df = pd.DataFrame([part_corrects, part_total], index=["correct", "total"])
+    part_result_df.loc["loc_acc"] = part_result_df.loc["correct"] / part_result_df.loc["total"]
+    part_result_df.to_csv(Path(output_dir) / "part_localization_results.csv")
 
     # Print Computed results
     print("Number of correct localization:")
@@ -154,5 +157,5 @@ def loc_eval(keypoint_annotations: dict,
     print("evaluated_attr_mask:")
     print(evaluated_attr_mask)
 
-    print("attr_loc_accuracy:", attr_loc_accuracy)
-    print("part_loc_accuracy:", part_loc_accuracy)
+    logger.info(f"attr_loc_accuracy: {float(attr_loc_accuracy):.4f}")
+    logger.info(f"part_loc_accuracy: {float(part_loc_accuracy):.4f}")
