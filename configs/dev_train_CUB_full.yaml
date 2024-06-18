@@ -6,7 +6,7 @@ MODEL:
     L_C: 1e-1
     L_Y: 1
     L_CPT: 1e-3
-    L_DEC: 5e-2
+    L_DEC: 2e-2
     USE_ATTR_WEIGHTS: False
 DATASET:
   NAME: "CUB"
@@ -24,5 +24,5 @@ OPTIM:
   WEIGHT_DECAY: 4e-4
   EARLY_STOP: 30
   GAMMA: 0.1
-  STEP_SIZE: 50
+  STEP_SIZE: 100
 SEED: 42

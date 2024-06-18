@@ -170,9 +170,9 @@ class CUBDataset(Dataset):
             for p in self.part_names:
                 if i in PART_GROUPS[p]:
                     part_indices.append(self.part_names.index(p))
-        if attr_mask is not None:
-            part_indices = part_indices[attr_mask]
         self.part_indices = np.array(part_indices)
+        if attr_mask is not None:
+            self.part_indices = self.part_indices[attr_mask]
 
     @property
     def attribute_weights(self):
