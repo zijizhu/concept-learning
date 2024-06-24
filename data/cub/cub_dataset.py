@@ -1,22 +1,15 @@
-import os
+import pickle as pkl
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
 import torchvision.transforms as t
-import torchvision.transforms.functional as f
 from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 
 from .augment import get_augmented_train_df
-from .constants import PART_GROUPS
-
-
-def map_fn_to_crop_fn(fn: str):
-    parent, name = fn.split("/")
-    return os.path.join(parent, "cropped", name)
 
 
 class CUBDataset(Dataset):
@@ -26,25 +19,23 @@ class CUBDataset(Dataset):
                  use_augmentation: str | None = None,
                  use_attrs: str | Path | np.ndarray | torch.Tensor = "binary",
                  use_attr_mask: str | Path | np.ndarray | bool = False,
+                 use_part_group: str = "coarse",
                  use_splits: str | Path | dict | None = None,
                  transforms: t.Compose | None = None) -> None:
         super().__init__()
         self.split = split
-        self.dataset_dir = dataset_dir
+        self.dataset_dir = Path(dataset_dir) / "CUB_200_2011"
 
         #####################################################
         # Load dataframes that store information of samples #
         #####################################################
 
-        file_paths_df = pd.read_csv(
-            os.path.join(dataset_dir, "CUB_200_2011", "images.txt"),
-            sep=" ", header=None, names=["image_id", "filename"])
-        image_labels_df = pd.read_csv(
-            os.path.join(dataset_dir, "CUB_200_2011", "image_class_labels.txt"),
-            sep=" ", header=None, names=["image_id", "class_id"])
-        train_test_split_df = pd.read_csv(
-            os.path.join(dataset_dir, "CUB_200_2011", "train_test_split.txt"),
-            sep=" ", header=None, names=["image_id", "is_train"])
+        file_paths_df = pd.read_csv(self.dataset_dir / "images.txt",
+                                    sep=" ", header=None, names=["image_id", "filename"])
+        image_labels_df = pd.read_csv(self.dataset_dir / "image_class_labels.txt",
+                                      sep=" ", header=None, names=["image_id", "class_id"])
+        train_test_split_df = pd.read_csv(self.dataset_dir / "train_test_split.txt",
+                                          sep=" ", header=None, names=["image_id", "is_train"])
 
         main_df = (file_paths_df
                    .merge(image_labels_df, on="image_id")
@@ -66,7 +57,7 @@ class CUBDataset(Dataset):
                               "val": val_image_ids,
                               "test": test_image_ids}
         else:
-            if isinstance(use_splits, str) or isinstance(use_splits, Path):
+            if isinstance(use_splits, (str, Path,)):
                 use_splits = np.load(use_splits)
             self.image_ids = {
                 "train": use_splits["train"],
@@ -80,15 +71,14 @@ class CUBDataset(Dataset):
         ###############################
 
         # Load attribute names
-        attr_df = pd.read_csv(
-            os.path.join(dataset_dir, "attributes.txt"), sep=' ', usecols=[1],
-            header=None, names=['attribute'])
+        attr_df = pd.read_csv(self.dataset_dir / "attributes" /"attributes.txt",
+                              sep=' ', usecols=[1], header=None, names=['attribute'])
         attr_df['attribute'] = attr_df['attribute'].str.replace('_', ' ', regex=True)
         attr_df[['attribute_group', 'value']] = attr_df['attribute'].str.split('::', n=1, expand=True)
 
         attr_mask = None
         if use_attr_mask:
-            if isinstance(use_attr_mask, str) or isinstance(use_attr_mask, Path):
+            if isinstance(use_attr_mask, (str, Path,)):
                 attr_mask = np.loadtxt(use_attr_mask).astype(bool)
             elif isinstance(use_attr_mask, np.ndarray):
                 attr_mask = use_attr_mask
@@ -101,9 +91,9 @@ class CUBDataset(Dataset):
 
         # Load attribute vectors
         if use_attrs in ["binary", "continuous"]:
-            attr_vectors = np.loadtxt(
-                os.path.join(dataset_dir, "CUB_200_2011", "attributes",
-                             "class_attribute_labels_continuous.txt"))
+            attr_vectors = np.loadtxt(self.dataset_dir
+                                      / "attributes"
+                                      / "class_attribute_labels_continuous.txt")
             attr_vectors /= 100
 
             if attr_mask is not None:
@@ -112,9 +102,9 @@ class CUBDataset(Dataset):
             if use_attrs == "binary":
                 attr_vectors = np.where(attr_vectors >= 0.5, 1, 0)
         else:
-            if isinstance(use_attrs, str) or isinstance(use_attrs, Path):
+            if isinstance(use_attrs, (str, Path,)):
                 attr_vectors = np.loadtxt(use_attrs)
-            elif isinstance(use_attrs, np.ndarray) or isinstance(use_attrs, torch.Tensor):
+            elif isinstance(use_attrs, (np.ndarray, torch.Tensor,)):
                 attr_vectors = use_attrs
             else:
                 raise NotImplementedError
@@ -126,9 +116,8 @@ class CUBDataset(Dataset):
         # Load and process class names in a readable format #
         #####################################################
 
-        class_names_df = pd.read_csv(
-            os.path.join(dataset_dir, "CUB_200_2011", "classes.txt"), sep=" ",
-            header=None, names=["class_id", "class_name"])
+        class_names_df = pd.read_csv(self.dataset_dir / "classes.txt", sep=" ",
+                                     header=None, names=["class_id", "class_name"])
 
         self.class_names = (class_names_df["class_name"].str.split(".").str[-1]
                             .replace("_", " ", regex=True).to_list())
@@ -145,34 +134,47 @@ class CUBDataset(Dataset):
             transforms = t.ToTensor()
         self.transforms = transforms
 
-        bbox_df = pd.read_csv("datasets/CUB/CUB_200_2011/bounding_boxes.txt",
+        ####################################################
+        # Load bounding box annotation for cropping images #
+        ####################################################
+
+        bbox_df = pd.read_csv(self.dataset_dir / "bounding_boxes.txt",
                               header=None, names=["image_id", "x", "y", "w", "h"], sep=" ")
         bbox_df["image_id"] -= 1
         self.bbox_ann = list(bbox_df[["x", "y", "w", "h"]].itertuples(index=False, name=None))
 
+        #################################################
+        # Load augmneated images and process sample ids #
+        #################################################
+
         if use_augmentation:
-            assert use_augmentation in ["crop", "augmentor"]
-            if use_augmentation == "crop":
-                self.main_df["filename"] = self.main_df["filename"].apply(map_fn_to_crop_fn)
-            elif use_augmentation == "augmentor":  # use_augmentation == "full"
-                self.main_df["filename"] = self.main_df["filename"].apply(map_fn_to_crop_fn)
-                augmented_train_df = get_augmented_train_df(Path(self.dataset_dir) / "CUB_200_2011" / "images",
+            assert use_augmentation in ["crop", "augment"]
+            def replace_fn(fn):
+                return fn.replace("/", "/cropped/")
+            self.main_df["filename"] = self.main_df["filename"].apply(replace_fn)
+            if use_augmentation == "augment":
+                augmented_train_df = get_augmented_train_df(Path(self.dataset_dir) / "images",
                                                             self.main_df[self.main_df["is_train"] == 1])
                 self.main_df = pd.concat([self.main_df, augmented_train_df], axis=0, ignore_index=True)
+                # TODO: refine training and validation sampe ids when using augmentation
                 self.image_ids["train"] = self.main_df[self.main_df["is_train"] == 1].index.to_list()
                 self.image_ids["train_val"] = self.main_df[self.main_df["is_train"] == 1].index.to_list()
-            else:
-                raise NotImplementedError
+        
+        #############################################################################
+        # Load part annotations including keypoint and part-based asttribute groups #
+        #############################################################################
+        assert use_part_group in ["fine", "coarse"]
+        part_ann_fn = f"keypoint_annotations_{use_part_group}.pkl"
+        with open(self.dataset_dir / part_ann_fn, "rb") as fp:
+                self.part_keypoint_annotation = pkl.load(fp)
 
-        self.part_names = sorted(k for k in PART_GROUPS.keys() if k != "others") + ["others"]
-        part_indices = []
-        for i in range(312):
-            for p in self.part_names:
-                if i in PART_GROUPS[p]:
-                    part_indices.append(self.part_names.index(p))
-        self.part_indices = np.array(part_indices)
-        if attr_mask is not None:
-            self.part_indices = self.part_indices[attr_mask]
+    @property
+    def part_names(self) -> list[str]:
+        return self.part_keypoint_annotation["processed_part_names"]
+    
+    @property
+    def part_indices(self) -> list[int]:
+        return map(self.part_names.index, self.part_keypoint_annotation["attribute_part_map"])
 
     @property
     def attribute_weights(self):
@@ -202,15 +204,12 @@ class CUBDataset(Dataset):
 
         filename, class_id, _ = self.main_df.iloc[image_id]
 
-        path_to_image = os.path.join(self.dataset_dir, "CUB_200_2011", "images", filename)
+        path_to_image = self.dataset_dir / "images" / filename
         image = Image.open(path_to_image).convert("RGB")
 
         attr_scores = self.attribute_vectors_pt[class_id]
 
-        if self.transforms is not None:
-            pixel_values = self.transforms(image)
-        else:
-            pixel_values = image
+        pixel_values = self.transforms(image) if self.transforms else image
 
         return {
             "image_ids": torch.tensor(image_id, dtype=torch.long),

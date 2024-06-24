@@ -2,37 +2,33 @@ import argparse
 import logging
 import os
 import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Callable
 
 import torch
 from lightning import seed_everything
 from omegaconf import OmegaConf
-from torch import nn
-from torch import optim
+from torch import nn, optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
 from data.cub.transforms import get_transforms_dev
-from models.dev import DevModel, DevLoss
+from models.dev import DevLoss, DevModel
 
 
 # TODO Move this function to other files
 @torch.no_grad()
 def compute_corrects(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-    if isinstance(outputs, dict):
-        class_preds = outputs["class_scores"]
-    else:
-        class_preds = outputs
+    class_preds = outputs["class_scores"] if isinstance(outputs, dict) else outputs
     class_ids = batch["class_ids"]
     return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
 
 
 def train_epoch(model: nn.Module,
                 loss_fn: nn.Module | Callable,
-                loss_keys: list[str],
                 num_corrects_fn: nn.Module | Callable,
                 dataloader: DataLoader,
                 optimizer: torch.optim.Optimizer,
@@ -43,7 +39,7 @@ def train_epoch(model: nn.Module,
                 device: torch.device,
                 logger: logging.Logger,
                 model_name: str):
-    running_losses = {k: 0 for k in loss_keys}
+    running_losses = defaultdict(float)
     running_corrects = 0
 
     for batch_inputs in tqdm(dataloader):
@@ -113,10 +109,7 @@ def main():
     seed_everything(cfg.SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if args.name:
-        experiment_name = args.name
-    else:
-        experiment_name = f"{config_path.stem}_base"
+    experiment_name = args.name if args.name else f"{config_path.stem}_base"
 
     print("Experiment Name:", experiment_name)
     print("Hyperparameters:")
@@ -155,6 +148,7 @@ def main():
             logging.FileHandler(os.path.join(log_dir, "train.log")),
             logging.StreamHandler(sys.stdout),
         ],
+        force=True,
     )
     logger = logging.getLogger(__name__)
 
@@ -164,7 +158,7 @@ def main():
 
     if cfg.DATASET.NAME == "CUB":
         augmentation = cfg.DATASET.get("AUGMENTATION", None)
-        train_transforms, test_transforms = get_transforms_dev(cropped=True if augmentation else False)
+        train_transforms, test_transforms = get_transforms_dev(cropped=bool(augmentation))
         num_classes = 200
         num_attrs = cfg.DATASET.get("NUM_ATTRS", 112)
         dataset_train = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val",
@@ -179,7 +173,8 @@ def main():
         print("Validation set size:", len(dataset_val))
         dataloader_train = DataLoader(dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
                                       shuffle=True, num_workers=8)
-        dataloader_val = DataLoader(dataset=dataset_val, batch_size=cfg.OPTIM.BATCH_SIZE, shuffle=True, num_workers=8)
+        dataloader_val = DataLoader(dataset=dataset_val, batch_size=cfg.OPTIM.BATCH_SIZE,
+                                    shuffle=True, num_workers=8)
     else:
         raise NotImplementedError
 
@@ -187,16 +182,15 @@ def main():
     # Load and fine-tune full model #
     #################################
     if cfg.MODEL.BACKBONE == 'resnet101':
-        from torchvision.models import resnet101, ResNet101_Weights
+        from torchvision.models import ResNet101_Weights, resnet101
         backbone = resnet101(weights=ResNet101_Weights.DEFAULT)
     elif cfg.MODEL.BACKBONE == 'resnet50':
-        from torchvision.models import resnet50, ResNet50_Weights
+        from torchvision.models import ResNet50_Weights, resnet50
         backbone = resnet50(weights=ResNet50_Weights.DEFAULT)
     else:
         raise NotImplementedError
 
-    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes, use_attention=cfg.MODEL.USE_ATTENTION)
-    loss_keys = ['l_y', 'l_c'] + (['l_cpt'] if cfg.MODEL.LOSSES.L_CPT > 0 else []) + (['l_dec'] if cfg.MODEL.LOSSES.L_DEC > 0 else [])
+    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes)
     if cfg.MODEL.LOSSES.USE_ATTR_WEIGHTS:
         attribute_weights = torch.tensor(dataset_train.attribute_weights, device=device)
     else:
@@ -210,21 +204,18 @@ def main():
                         attribute_weights=attribute_weights)
 
     # Initialize optimizer
-    non_backbone_params = [p for name, p in net.named_parameters() if 'backbone' not in name]
-    if cfg.OPTIM.OPTIMIZER == "ADAM":
-        optimizer = optim.Adam(params=[
-            {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
-            {"params": non_backbone_params},
-        ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY)
-    elif cfg.OPTIM.OPTIMIZER == "SGD":
-        optimizer = optim.SGD(params=[
-            {"params": net.backbone.parameters(), "lr": cfg.OPTIM.LR * 0.1},
-            {"params": non_backbone_params},
-        ], lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY, momentum=0.9)
+    optim_args = dict(params=filter(lambda p: p.required_grad, net.parameters()),
+                      lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY)
+    if cfg.OPTIM.OPTIMIZER == "SGD":
+        optim["momentum"] = 0.9
+        optimizer = optim.SGD(**optim_args)
+    elif cfg.OPTIM.OPTIMIZER == "ADAM":
+        optimizer = optim.Adam(**optim_args)
     else:
         raise NotImplementedError
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=cfg.OPTIM.STEP_SIZE, gamma=cfg.OPTIM.GAMMA)
+    scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=cfg.OPTIM.STEP_SIZE,
+                                          gamma=cfg.OPTIM.GAMMA)
 
     net.to(device)
     net.train()
@@ -232,7 +223,7 @@ def main():
     early_stopping_epochs = cfg.OPTIM.get("EARLY_STOP", 30)
     prototype_weights = []
     for epoch in range(cfg.OPTIM.EPOCHS):
-        train_epoch(model=net, loss_fn=criterion, loss_keys=loss_keys, num_corrects_fn=compute_corrects,
+        train_epoch(model=net, loss_fn=criterion, num_corrects_fn=compute_corrects,
                     dataloader=dataloader_train, optimizer=optimizer, writer=summary_writer,
                     batch_size=cfg.OPTIM.BATCH_SIZE, dataset_size=len(dataset_train),
                     device=device, epoch=epoch, logger=logger, model_name="full model")

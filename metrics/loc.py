@@ -1,3 +1,4 @@
+from logging import Logger
 from pathlib import Path
 
 import albumentations as A
@@ -9,11 +10,12 @@ import torchvision.transforms.functional as f
 from torch import nn
 from tqdm import tqdm
 
-from data.cub.cub_dataset import CUBDataset
 from data.cub.crop import bbox_to_square_bbox
+from data.cub.cub_dataset import CUBDataset
 
 
 def in_bbox(point: tuple[float, float], bbox: tuple[float, float, float, float]) -> bool:
+    """Check if a point with format (x,y,) is in a bounding box with format (cx,cy,h,w,)"""
     cx, cy, h, w = bbox
     x, y = point
     x_in_bbox = (cx - w / 2) <= x <= (cx + w / 2)
@@ -24,30 +26,32 @@ def in_bbox(point: tuple[float, float], bbox: tuple[float, float, float, float])
 
 
 @torch.inference_mode()
-def loc_eval(keypoint_annotations: dict,
-             model: nn.Module,
+def loc_eval(model: nn.Module,
              dataset_test: CUBDataset,
              output_dir: str | Path,
-             logger,
+             logger: Logger,
              cropped: bool = False,
              bbox_size: int = 90,
-             device: torch.device = torch.device("cpu")):
-    """dataset_test is expected to pixel_values produced by only pil_to_tensor without any other transforms"""
-    transforms = A.Compose([A.Resize(height=232, width=232),
+             device: str | torch.device = "cpu"):
+    """Perform localization evaluation on CUB dataset.
+    `dataset_test` is expected to have no transformation other than `pil_to_tensor`."""
+    transforms = A.Compose([A.Resize(height=224 if cropped else 232,
+                                     width=224 if cropped else 232),
                             A.CenterCrop(height=224, width=224),
-                            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])],
+                            A.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])],
                            keypoint_params=A.KeypointParams(format='xy',
                                                             label_fields=['class_labels'],
                                                             remove_invisible=True))
 
-    part_name_list = keypoint_annotations["processed_part_names"]
-    image_id_to_keypoints = keypoint_annotations['keypoint_annotations']
-    attr_part_map = keypoint_annotations["attribute_part_map"]
+    part_name_list = dataset_test.part_keypoint_annotation["processed_part_names"]
+    image_id_to_keypoints = dataset_test.part_keypoint_annotation['keypoint_annotations']
+    attr_part_map = dataset_test.part_keypoint_annotation["attribute_part_map"]
 
     attribute_df = dataset_test.attributes_df
 
-    attr_corrects = np.zeros(len(attribute_df.index))
-    attr_total = np.zeros(len(attribute_df.index))
+    attr_corrects = np.zeros(len(attr_part_map))
+    attr_total = np.zeros(len(attr_part_map))
 
     part_corrects = {p: 0 for p in part_name_list}
     part_total = {p: 0 for p in part_name_list}
@@ -102,8 +106,7 @@ def loc_eval(keypoint_annotations: dict,
         attn_maps_interpolated = cv2.resize(attn_maps, (224, 224))
 
         # Loop through all attribute ids in dataset, no matter whether they are used for training
-        for attr_id in attr_part_map:
-            attr_part_name = attr_part_map[attr_id]
+        for attr_id, attr_part_name in enumerate(attr_part_map):
             # Skip if:
             # 1. Sample does not contain ground truth keypoint label of the part corresponding to attribute
             # 2. It is not an active ground truth attribute of the image
@@ -114,9 +117,9 @@ def loc_eval(keypoint_annotations: dict,
             attr_keypoint_label = part_keypoint_map[attr_part_name]
 
             # Get the coordinate of max attention of the attribute
-            # Check if the ground truth keypoint of the attribute is inside the bounding box around the coordinate
+            # Check if the ground truth keypoint of the attribute is inside the bbox around it
             attr_attn_map = attn_maps_interpolated[:, :, attn_map_idx]
-            y, x = np.unravel_index(np.argmax(attr_attn_map), attr_attn_map.shape)  # Note: y, x
+            y, x = np.unravel_index(np.argmax(attr_attn_map), attr_attn_map.shape)
             bbox = (x, y, bbox_size, bbox_size,)
 
             if in_bbox(attr_keypoint_label, bbox):
@@ -127,18 +130,18 @@ def loc_eval(keypoint_annotations: dict,
             part_total[attr_part_name] += 1
 
     # Filter attributes that correspond to parts that are visible in some image samples
-    evaluated_attr_mask = attr_total > 0
+    mask = attr_total > 0
 
     # Compute accuracy
-    attr_loc_accuracy = np.mean(attr_corrects[evaluated_attr_mask] / attr_total[evaluated_attr_mask])
+    attr_loc_accuracy = float(np.mean(attr_corrects[mask] / attr_total[mask]))
     part_loc_accuracy = sum(part_corrects.values()) / sum(part_total.values())
 
     # Save computed results
-    np.savez(output_dir / "attribute_localization_results",
+    np.savez(Path(output_dir) / "attribute_localization_results",
              mean_attr_loc_acc=attr_loc_accuracy,
              attr_corrects=attr_corrects,
              attr_total=attr_total,
-             evaluated_attr_mask=evaluated_attr_mask)
+             evaluated_attr_mask=mask)
 
     attribute_df.to_csv(Path(output_dir) / "attribute_df.csv")
 
@@ -152,7 +155,7 @@ def loc_eval(keypoint_annotations: dict,
     print("Number of appearance as ground truth:")
     print(attr_total)
     print("evaluated_attr_mask:")
-    print(evaluated_attr_mask)
+    print(mask)
 
     logger.info(f"attr_loc_accuracy: {float(attr_loc_accuracy):.4f}")
     logger.info(f"part_loc_accuracy: {float(part_loc_accuracy):.4f}")

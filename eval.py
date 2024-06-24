@@ -228,16 +228,14 @@ def main():
                        dataset_size=len(dataset_test), rng=rng, logger=logger, writer=summary_writer, device=device)
 
     # Test Attribute and Part Localization Performance
-    with open(Path("data") / "cub" / "keypoint_annotations.pkl", "rb") as fp:
-        keypoint_annotations = pkl.load(fp)
 
     dataset_test_no_transform = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
                                            use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
                                            use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
                                            transforms=None)
 
-    loc_eval(keypoint_annotations, net, dataset_test_no_transform, log_dir, logger,
-             cropped=True if augmentation else False, bbox_size=90, device=device)
+    loc_eval(net, dataset_test_no_transform, log_dir, logger,
+             cropped=bool(augmentation), bbox_size=90, device=device)
 
     summary_writer.flush()
     summary_writer.close()

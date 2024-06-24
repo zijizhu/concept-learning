@@ -1,7 +1,7 @@
 """
 Script to loop through image folders,
 crop each image according to the bbox annotation.
-The crop size is a square with size equal to the larger side of annotated bbox.
+The crop size is a square with size equal to the larger side of annotated bbox plus 20.
 """
 import argparse
 from pathlib import Path
