@@ -11,20 +11,26 @@ class DevModel(nn.Module):
         self.dim = backbone.fc.in_features
         self.num_attrs, self.num_classes = num_attrs, num_classes
 
-        self.prototype_conv = nn.Conv2d(self.dim, self.num_attrs, kernel_size=1, bias=False)
+        # self.prototype_conv = nn.Conv2d(self.dim, self.num_attrs, kernel_size=1, bias=False)
+        self.prototypes = nn.Parameter(2e-4 * torch.randn(num_attrs, self.dim, 1, 1))
         self.pool = nn.AdaptiveMaxPool2d((1, 1))
 
-        self.s = nn.Sigmoid()
+        # self.s = nn.Sigmoid()
 
         self.c2y = nn.Linear(num_attrs, num_classes)
 
     def forward(self, x: torch.Tensor):
         features = self.backbone(x)  # type: torch.Tensor
 
-        attn_maps = self.prototype_conv(features)  # shape: [b,k,h,w]
+        # attn_maps = self.prototype_conv(features)  # shape: [b,k,h,w]
+        features = f.normalize(features, p=2, dim=1)
+        prototypes = f.normalize(self.prototypes, p=2, dim=1)
+        attn_maps = f.conv2d(input=features, weight=prototypes)
+        attn_maps = 0.5 * (attn_maps + 1)
+
         c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
 
-        c = self.s(c)
+        # c = self.s(c)
         y = self.c2y(c)
 
         # shape: [b,num_classes], [b,k], [b,k,h,w]
@@ -32,7 +38,7 @@ class DevModel(nn.Module):
             "class_scores": y,
             "attr_scores": c,
             "attn_maps": attn_maps,
-            "prototypes": self.prototype_conv.weight.squeeze(),
+            "prototypes": torch.squeeze(self.prototypes),
         }
 
     @torch.inference_mode()
@@ -40,11 +46,15 @@ class DevModel(nn.Module):
                   int_mask: torch.Tensor | None = None,
                   int_values: torch.Tensor | None = None):
         features = self.backbone(x)  # type: torch.Tensor
-        attn_maps = self.prototype_conv(features)  # shape: [b,k,h,w]
+
+        features = f.normalize(features, p=2, dim=1)
+        prototypes = f.normalize(self.prototypes, p=2, dim=1)
+        attn_maps = f.conv2d(input=features, weight=prototypes)
+        attn_maps = 0.5 * (attn_maps + 1)
 
         c = self.pool(attn_maps).squeeze(dim=(-1, -2))  # shape: [b, k]
-        if self.s:
-            c = self.s(c)  # shape: [b, k]
+
+        # c = self.s(c)  # shape: [b, k]
 
         if int_mask is not None:
             assert isinstance(int_mask, torch.Tensor) and isinstance(int_values, torch.Tensor)

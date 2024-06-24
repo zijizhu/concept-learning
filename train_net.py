@@ -204,10 +204,10 @@ def main():
                         attribute_weights=attribute_weights)
 
     # Initialize optimizer
-    optim_args = dict(params=filter(lambda p: p.required_grad, net.parameters()),
+    optim_args = dict(params=filter(lambda p: p.requires_grad, net.parameters()),
                       lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY)
     if cfg.OPTIM.OPTIMIZER == "SGD":
-        optim["momentum"] = 0.9
+        optim_args["momentum"] = 0.9
         optimizer = optim.SGD(**optim_args)
     elif cfg.OPTIM.OPTIMIZER == "ADAM":
         optimizer = optim.Adam(**optim_args)
@@ -221,7 +221,7 @@ def main():
     net.train()
     best_epoch, best_val_acc = 0, 0.
     early_stopping_epochs = cfg.OPTIM.get("EARLY_STOP", 30)
-    prototype_weights = []
+
     for epoch in range(cfg.OPTIM.EPOCHS):
         train_epoch(model=net, loss_fn=criterion, num_corrects_fn=compute_corrects,
                     dataloader=dataloader_train, optimizer=optimizer, writer=summary_writer,
@@ -241,10 +241,6 @@ def main():
             logger.info("Best epoch found, model saved!")
         if epoch >= best_epoch + early_stopping_epochs:
             break
-
-        # Save prototype weights for inspection
-        prototype_weights.append(net.prototype_conv.weight.detach().cpu())
-        torch.save(torch.stack(prototype_weights, dim=0), Path(log_dir) / "prototype_weights.pth")
 
         scheduler.step()
 

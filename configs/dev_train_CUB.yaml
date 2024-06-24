@@ -5,8 +5,8 @@ MODEL:
   LOSSES:
     L_C: 1e-1
     L_Y: 1
-    L_CPT: 1e-3
-    L_DEC: 2e-2
+    L_CPT: 0
+    L_DEC: 0
     USE_ATTR_WEIGHTS: False
 DATASET:
   NAME: "CUB"

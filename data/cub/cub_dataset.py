@@ -174,7 +174,7 @@ class CUBDataset(Dataset):
     
     @property
     def part_indices(self) -> list[int]:
-        return map(self.part_names.index, self.part_keypoint_annotation["attribute_part_map"])
+        return list(map(self.part_names.index, self.part_keypoint_annotation["attribute_part_map"]))
 
     @property
     def attribute_weights(self):
