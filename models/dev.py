@@ -29,8 +29,8 @@ class DevModel(nn.Module):
 
         # shape: [b,num_classes], [b,k], [b,k,h,w]
         return {
-            "class_scores": y,
-            "attr_scores": c,
+            "class_preds": y,
+            "attr_preds": c,
             "attn_maps": attn_maps,
             "prototypes": self.prototype_conv.weight.squeeze(),
         }
@@ -52,8 +52,8 @@ class DevModel(nn.Module):
         y = self.c2y(c)
 
         return {
-            "attr_scores": c,
-            "class_scores": y,
+            "attr_preds": c,
+            "class_preds": y,
             "attn_maps": attn_maps,
             "prototypes": self.prototype_conv.weight.squeeze(),
         }
@@ -76,8 +76,8 @@ class DevLoss(nn.Module):
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
         loss_dict = {
-            "l_y": self.l_y_coef * self.l_y(outputs["class_scores"], batch["class_ids"]),
-            "l_c": self.l_c_coef * self.l_c(outputs["attr_scores"], batch["attr_scores"]),
+            "l_y": self.l_y_coef * self.l_y(outputs["class_preds"], batch["class_ids"]),
+            "l_c": self.l_c_coef * self.l_c(outputs["attr_preds"], batch["attr_scores"]),
         }
         if self.l_cpt_coef > 0:
             loss_dict["l_cpt"] = self.l_cpt_coef * self.l_cpt(outputs["attn_maps"])

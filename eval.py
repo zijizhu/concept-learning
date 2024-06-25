@@ -3,8 +3,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-import pickle as pkl
-from typing import Callable
 
 import numpy as np
 import torch
@@ -13,53 +11,27 @@ from omegaconf import OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
+from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
 from data.cub.transforms import get_transforms_dev
-from models.dev import DevModel
 from metrics.loc import loc_eval
-
-
-@torch.no_grad()
-def compute_corrects(outputs: dict[str, torch.Tensor] | torch.Tensor, batch: dict[str, torch.Tensor]):
-    if isinstance(outputs, dict):
-        class_preds = outputs["class_scores"]
-    else:
-        class_preds = outputs
-    class_ids = batch["class_ids"]
-    return torch.sum(torch.argmax(class_preds.data, dim=-1) == class_ids.data).item()
-
-
-@torch.inference_mode()
-def get_lo_hi_activations(model, dataloader, hi_lo_quantiles: tuple[int, int] = (0.95, 0.05),
-                          device: torch.device = torch.device('cpu')):
-    hi_quantile, lo_quantile = hi_lo_quantiles
-    all_concept_activations = []
-    for batch in tqdm(dataloader):
-        batch = {k: v.to(device) for k, v in batch.items()}
-        outputs = model(batch["pixel_values"])
-        all_concept_activations.append(outputs["attr_scores"])
-    activations = torch.cat(all_concept_activations, dim=0)
-    hi_activations = torch.quantile(activations, hi_quantile, dim=0)  # shape: [num_attrs]
-    lo_activations = torch.quantile(activations, lo_quantile, dim=0)  # shape: [num_attrs]
-
-    return torch.stack([lo_activations, hi_activations], dim=-1)  # shape: [num_attrs, 2]
+from models.dev import DevModel
 
 
 @torch.inference_mode()
 def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_list: list[int],
-                       attribute_group_indices: np.array, num_corrects_fn: Callable,
-                       dataset_size: int, batch_size: int, rng: np.random.Generator, logger: logging.Logger,
-                       writer: SummaryWriter, device: torch.device):
-    """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
+                       attribute_group_indices: np.array, num_classes: int, rng: np.random.Generator,
+                       logger: logging.Logger, writer: SummaryWriter, device: torch.device):
+    """Given a dataset and concept learning model, test its ability of responding to interventions"""
     num_total_groups = len(np.unique(attribute_group_indices))
 
     for num_int_groups in num_int_groups_list:
         if num_int_groups > num_total_groups:
             continue
         sampled_group_ids, int_masks = [], []
-        for _ in range(dataset_size):
+        for _ in range(len(dataloader.dataset)):
             group_id_choices = rng.choice(np.arange(num_total_groups), size=num_int_groups, replace=False)
             mask = np.isin(attribute_group_indices, group_id_choices).astype(int)
             sampled_group_ids.append(group_id_choices)
@@ -67,67 +39,73 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_
 
         int_dataset = TensorDataset(torch.tensor(np.stack(sampled_group_ids)),
                                     torch.tensor(np.stack(int_masks)))
-        int_dataloader = DataLoader(int_dataset, batch_size=batch_size)
+        int_dataloader = DataLoader(int_dataset, batch_size=dataloader.batch_size)
 
-        running_corrects = 0
+        mca = MulticlassAccuracy(num_classes=num_classes)
         # Inference loop
-        for batch, int_batch in tqdm(zip(dataloader, int_dataloader), total=len(dataloader)):
-            _, int_masks = int_batch
-            batch = {k: v.to(device) for k, v in batch.items()}
+        for batch_inputs, batch_int in tqdm(zip(dataloader, int_dataloader), total=len(dataloader)):
+            _, int_masks = batch_int
+            batch = {k: v.to(device) for k, v in batch_inputs.items()}
             int_masks = int_masks.to(device)
             int_values = batch["attr_scores"]
-            results = model.inference(batch["pixel_values"], int_mask=int_masks, int_values=int_values)
+            outputs = model.inference(batch["pixel_values"], int_mask=int_masks, int_values=int_values)
 
-            running_corrects += num_corrects_fn(results, batch)
+            mca(outputs["class_preds"], batch_inputs["class_ids"])
 
         # Compute accuracy
-        acc = running_corrects / dataset_size
-        writer.add_scalar("Intervention curve", acc, num_int_groups)
-        logger.info(f"Test Acc when {num_int_groups} attribute groups intervened: {acc:.4f}")
+        acc = mca.compute().item()
+        writer.add_scalar("Num intervened attributes vs Accuracy", acc, num_int_groups)
+        logger.info(f"Test accuracy when {num_int_groups} attribute groups intervened: {acc:.4f}")
+
+        del mca
 
 
 @torch.inference_mode()
-def test_interventions_full(model: nn.Module, dataloader: DataLoader, num_corrects_fn: Callable,
-                            dataset_size: int, logger: logging.Logger, writer: SummaryWriter, device: torch.device):
-    """Given a dataset and concept learning model, test its ability of responding to test-time interventions"""
-    running_corrects = 0
-    # Inference loop
-    for test_inputs in tqdm(dataloader):
-        test_inputs = {k: v.to(device) for k, v in test_inputs.items()}
-        results = model.c2y(test_inputs["attr_scores"].to(torch.float32))
+def test_interventions_full(model: nn.Module, dataloader: DataLoader, num_classes: int,
+                            logger: logging.Logger, writer: SummaryWriter, device: torch.device):
+    """Given a dataset and concept learning model, test its ability of responding to interventions"""
+    mca = MulticlassAccuracy(num_classes=num_classes)
 
-        running_corrects += num_corrects_fn(results, test_inputs)
+    # Inference loop
+    for batch_inputs in tqdm(dataloader):
+        batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
+        class_preds = model.c2y(batch_inputs["attr_scores"].to(torch.float32))
+
+        mca(class_preds, batch_inputs["class_ids"])
 
     # Compute accuracy
-    acc = running_corrects / dataset_size
-    writer.add_scalar("Acc/full intervention", acc)
-    logger.info(f"Test Acc full intervention: {acc:.4f}")
+    acc = mca.compute().item()
+    logger.info(f"Test accuracy with Full Intervention: {acc:.4f}")
+    writer.add_text(f"Test accuracy with Full Intervention: {acc:.4f}")
 
 
 @torch.no_grad()
 def test_accuracy(model: nn.Module,
-                  num_corrects_fn: nn.Module | Callable,
+                  num_classes: int,
                   dataloader: DataLoader,
-                  dataset_size: int,
                   device: torch.device,
+                  writer: SummaryWriter,
                   logger: logging.Logger):
-    running_corrects = 0
+    mca = MulticlassAccuracy(num_classes=num_classes)
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
         outputs = model(batch_inputs['pixel_values'])
 
-        running_corrects += num_corrects_fn(outputs, batch_inputs)
+        mca(outputs["class_preds"], batch_inputs["class_ids"])
 
-    epoch_acc = running_corrects / dataset_size
-    logger.info(f"Test Acc: {epoch_acc:.4f}")
-
-    return epoch_acc
+    acc = mca.compute().item()
+    logger.info(f"Test accuracy: {acc:.4f}")
+    writer.add_text(f"Test accuracy: {acc:.4f}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluation Script")
     parser.add_argument("-e", "--experiment_dir", type=str, required=True)
+
+    metric_items = ["accuracy", "full_int_acc", "int_acc_curve", "part_iou"]
+    parser.add_argument("-m", "--metrics", nargs="+", choices=metric_items,
+                        default=metric_items)
 
     args = parser.parse_args()
     log_dir = Path(args.experiment_dir)
@@ -170,7 +148,7 @@ def main():
 
     if cfg.DATASET.NAME == "CUB":
         augmentation = cfg.DATASET.get("AUGMENTATION", None)
-        train_transforms, test_transforms = get_transforms_dev(cropped=True if augmentation else False)
+        _, test_transforms = get_transforms_dev(cropped=bool(augmentation))
 
         num_attrs = cfg.DATASET.get("NUM_ATTRS", 112)
 
@@ -190,10 +168,10 @@ def main():
     ###############
 
     if cfg.MODEL.BACKBONE == 'resnet101':
-        from torchvision.models import resnet101, ResNet101_Weights
+        from torchvision.models import ResNet101_Weights, resnet101
         backbone = resnet101(weights=ResNet101_Weights.DEFAULT)
     elif cfg.MODEL.BACKBONE == 'resnet50':
-        from torchvision.models import resnet50, ResNet50_Weights
+        from torchvision.models import ResNet50_Weights, resnet50
         backbone = resnet50(weights=ResNet50_Weights.DEFAULT)
     else:
         raise NotImplementedError
@@ -211,31 +189,36 @@ def main():
     net.eval()
 
     # Test Accuracy
-    logger.info("Start task accuracy evaluation...")
-    test_accuracy(net, compute_corrects, dataloader_test, len(dataset_test), device, logger)
-
-    logger.info("Start full intervention evaluation...")
-    test_interventions_full(model=net, dataloader=dataloader_test, num_corrects_fn=compute_corrects,
-                            dataset_size=len(dataset_test), logger=logger, writer=summary_writer, device=device)
+    
+    if "accuracy" in args.metrics:
+        logger.info("Start task accuracy evaluation...")
+        test_accuracy(model=net, num_classes=num_classes, dataloader=dataloader_test,
+                    device=device, writer=summary_writer, logger=logger)
+    if "full_int_acc" in args.metrics:
+        logger.info("Start full intervention evaluation...")
+        test_interventions_full(model=net, dataloader=dataloader_test, num_classes=num_classes,
+                                logger=logger, writer=summary_writer, device=device)
 
     # Test Intervention Performance
-    logger.info("Start intervention evaluation...")
-
-    num_groups_to_intervene = [4, 8, 12, 16, 20, 24, 28]
-    test_interventions(model=net, dataloader=dataloader_test, num_int_groups_list=num_groups_to_intervene,
-                       attribute_group_indices=dataset_test.attribute_group_indices,
-                       batch_size=cfg.OPTIM.BATCH_SIZE, num_corrects_fn=compute_corrects,
-                       dataset_size=len(dataset_test), rng=rng, logger=logger, writer=summary_writer, device=device)
+    if "int_acc_curve" in args.metrics:
+        logger.info("Start intervention evaluation for different number of attribute groups intervened...")
+        num_groups_to_intervene = [4, 8, 12, 16, 20, 24, 28]
+        test_interventions(model=net, dataloader=dataloader_test,
+                           num_int_groups_list=num_groups_to_intervene,
+                           attribute_group_indices=dataset_test.attribute_group_indices,
+                           num_classes=num_classes, rng=rng, logger=logger, writer=summary_writer,
+                           device=device)
 
     # Test Attribute and Part Localization Performance
+    if "part_iou" in args.metrics:
+        dataset_test_no_transform = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
+                                               use_attrs=cfg.DATASET.USE_ATTRS,
+                                               use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
+                                               use_splits=cfg.DATASET.USE_SPLITS,
+                                               use_augmentation=augmentation, transforms=None)
 
-    dataset_test_no_transform = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
-                                           use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
-                                           use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
-                                           transforms=None)
-
-    loc_eval(net, dataset_test_no_transform, log_dir, logger,
-             cropped=bool(augmentation), bbox_size=90, device=device)
+        loc_eval(net, dataset_test_no_transform, log_dir, logger,
+                cropped=bool(augmentation), bbox_size=90, device=device)
 
     summary_writer.flush()
     summary_writer.close()
