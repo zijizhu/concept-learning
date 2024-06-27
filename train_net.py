@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
 from data.cub.transforms import get_transforms_dev
-from models.dev import DevLoss, DevModel
+from models.loc import Loss, SingleBranchModel
 
 
 def train_epoch(model: nn.Module,
@@ -148,17 +148,15 @@ def main():
     if cfg.DATASET.NAME == "CUB":
         augmentation = cfg.DATASET.get("AUGMENTATION", None)
         train_transforms, test_transforms = get_transforms_dev(cropped=bool(augmentation))
-        num_classes = 200
-        num_attrs = cfg.DATASET.get("NUM_ATTRS", 112)
         dataset_train = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="train_val",
                                    use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
                                    use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
-                                   transforms=train_transforms)
+                                   transforms=train_transforms, use_part_group="coarse")
         print("Training set size:", len(dataset_train))
         dataset_val = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
                                  use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
                                  use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
-                                 transforms=train_transforms)
+                                 transforms=train_transforms, use_part_group="coarse")
         print("Validation set size:", len(dataset_val))
         dataloader_train = DataLoader(dataset=dataset_train, batch_size=cfg.OPTIM.BATCH_SIZE,
                                       shuffle=True, num_workers=8)
@@ -178,21 +176,24 @@ def main():
         backbone = resnet50(weights=ResNet50_Weights.DEFAULT)
     else:
         raise NotImplementedError
+    if cfg.MODEL.BACKBONE_WEIGHTS is not None:
+        backbone.fc = nn.Linear(backbone.fc.in_features, 200)
+        weights = torch.load(cfg.MODEL.BACKBONE_WEIGHTS, map_location="cpu")
+        backbone.load_state_dict(weights)
 
-    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes)
-    if cfg.MODEL.LOSSES.USE_ATTR_WEIGHTS:
-        attribute_weights = torch.tensor(dataset_train.attribute_weights, device=device)
-    else:
-        attribute_weights = None
+    net = SingleBranchModel(backbone, class_embeddings=dataset_train.attribute_vectors_pt)
 
-    criterion = DevLoss(l_c_coef=cfg.MODEL.LOSSES.L_C,
+    criterion = Loss(l_c_coef=cfg.MODEL.LOSSES.L_C,
                         l_y_coef=cfg.MODEL.LOSSES.L_Y,
                         l_cpt_coef=cfg.MODEL.LOSSES.L_CPT,
                         l_dec_coef=cfg.MODEL.LOSSES.L_DEC,
                         group_indices=dataset_train.part_indices_pt.to(device),
-                        attribute_weights=attribute_weights)
+                        attribute_weights=None)
 
     # Initialize optimizer
+    for name, param in net.named_parameters():
+        if "backbone" in name:
+            param.requires_grad = False
     optim_args = dict(params=filter(lambda p: p.requires_grad, net.parameters()),
                       lr=cfg.OPTIM.LR, weight_decay=cfg.OPTIM.WEIGHT_DECAY)
     if cfg.OPTIM.OPTIMIZER == "SGD":
@@ -202,9 +203,16 @@ def main():
         optimizer = optim.Adam(**optim_args)
     else:
         raise NotImplementedError
+    
+    def get_lr_factor(epoch: int):
+        if epoch < 15:
+            return 1
+        elif epoch in range(15, 30):
+            return 0.1
+        else:
+            return 0.1 * (0.5 ** (epoch // 30))
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=cfg.OPTIM.STEP_SIZE,
-                                          gamma=cfg.OPTIM.GAMMA)
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=get_lr_factor)
 
     net.to(device)
     net.train()
@@ -212,6 +220,16 @@ def main():
     early_stopping_epochs = cfg.OPTIM.get("EARLY_STOP", 30)
 
     for epoch in range(cfg.OPTIM.EPOCHS):
+        if epoch == 15:
+            for param in net.parameters():
+                param.requires_grad = True
+            optimizer.add_param_group({'params': net.backbone.parameters(), "lr": 1e-6})
+            print("Un-freezed backbone.")
+        
+        print(f"EPOCH {epoch} learning rate:")
+        for param_group in optimizer.param_groups:
+            print(param_group['lr'])
+
         train_epoch(model=net, loss_fn=criterion, dataloader=dataloader_train, optimizer=optimizer,
                     writer=summary_writer, epoch=epoch, device=device, logger=logger)
 
