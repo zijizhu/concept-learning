@@ -26,7 +26,7 @@ class SingleBranchModel(nn.Module):
 
         # Prediction branch
         pred_attn_maps = F.conv2d(input=x, weight=self.pred_prototypes)
-        class_preds = F.max_pool2d(pred_attn_maps, kernel_size=(w, h,)).view(b, -1) @ self.class_embeddings.Ts
+        class_preds = F.max_pool2d(pred_attn_maps, kernel_size=(w, h,)).view(b, -1) @ self.class_embeddings.T
 
         # shape: [b,num_classes], [b,k], [b,k,h,w]
         return {
