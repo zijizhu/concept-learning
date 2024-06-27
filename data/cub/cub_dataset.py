@@ -18,7 +18,7 @@ class CUBDataset(Dataset):
                  split: str = "train",
                  use_augmentation: str | None = None,
                  use_attrs: str | Path | np.ndarray | torch.Tensor = "binary",
-                 use_attr_mask: str | Path | np.ndarray | bool = False,
+                 use_attr_mask: str | Path | np.ndarray = None,
                  use_part_group: str = "coarse",
                  use_splits: str | Path | dict | None = None,
                  transforms: t.Compose | None = None) -> None:
@@ -72,23 +72,27 @@ class CUBDataset(Dataset):
 
         # Load attribute names
         attr_df = pd.read_csv(self.dataset_dir / "attributes" /"attributes.txt",
-                              sep=' ', usecols=[1], header=None, names=['attribute'])
-        attr_df['attribute'] = attr_df['attribute'].str.replace('_', ' ', regex=True)
-        attr_df[['attribute_group', 'value']] = attr_df['attribute'].str.split('::', n=1, expand=True)
+                              sep=" ", header=None, names=['attribute_id', 'attribute'])
+        attr_df[['attribute_group', 'attribute_value']] = (attr_df['attribute']
+                                                           .str
+                                                           .split('::', n=1, expand=True))
+        attr_df["attribute_id"] -= 1
 
-        attr_mask = None
-        if use_attr_mask:
+        attr_mask = np.ones(312).astype(bool)
+        if use_attr_mask is not None:
             if isinstance(use_attr_mask, (str, Path,)):
                 attr_mask = np.loadtxt(use_attr_mask).astype(bool)
             elif isinstance(use_attr_mask, np.ndarray):
-                attr_mask = use_attr_mask
+                attr_mask = use_attr_mask.astype(bool)
             else:
                 raise NotImplementedError
 
-            attr_df = attr_df[attr_mask]
+        model_attribute_indices = np.full(312, -1)
+        model_attribute_indices[attr_mask] = np.arange(0, np.sum(attr_mask))
+        attr_df["model_attribute_index"] = model_attribute_indices
 
-        self.attributes_df = attr_df.reset_index(drop=False).rename(columns={'index': 'attribute_id'})
-
+        self.attribute_df = attr_df
+    
         # Load attribute vectors
         if use_attrs in ["binary", "continuous"]:
             attr_vectors = np.loadtxt(self.dataset_dir
@@ -110,7 +114,7 @@ class CUBDataset(Dataset):
                 raise NotImplementedError
 
         self.attribute_vectors = attr_vectors
-        assert len(self.attributes_df) == self.attribute_vectors.shape[1]
+        assert self.attribute_df["model_attribute_index"].max() + 1 == self.attribute_vectors.shape[1]
 
         #####################################################
         # Load and process class names in a readable format #
@@ -125,8 +129,8 @@ class CUBDataset(Dataset):
         #################################
         # Load part or attribute groups #
         #################################
-        self.group_names = sorted(self.attributes_df['attribute_group'].unique())
-        self.attribute_group_indices = (self.attributes_df['attribute_group']
+        self.group_names = sorted(self.attribute_df['attribute_group'].unique())
+        self.attribute_group_indices = (self.attribute_df['attribute_group']
                                         .map(self.group_names.index)
                                         .to_numpy())
 
@@ -164,8 +168,8 @@ class CUBDataset(Dataset):
         # Load part annotations including keypoint and part-based asttribute groups #
         #############################################################################
         assert use_part_group in ["fine", "coarse"]
-        part_ann_fn = f"keypoint_annotations_{use_part_group}.pkl"
-        with open(self.dataset_dir / part_ann_fn, "rb") as fp:
+        part_ann_filename = f"keypoint_annotations_{use_part_group}.pkl"
+        with open(self.dataset_dir / part_ann_filename, "rb") as fp:
                 self.part_keypoint_annotation = pkl.load(fp)
 
     @property
@@ -195,6 +199,16 @@ class CUBDataset(Dataset):
     def attribute_vectors_pt(self):
         """Attribute vector for each class in type torch.Tensor"""
         return torch.tensor(self.attribute_vectors, dtype=torch.float32)
+    
+    @property
+    def attribute_vectors_norm(self):
+        attr_vec = self.attribute_vectors
+        attr_vec /= np.linalg.norm(attr_vec, axis=-1, keepdims=True)
+        return attr_vec
+
+    @property
+    def attribute_vectors_norm_pt(self):
+        return torch.tensor(self.attribute_vectors_norm, dtype=torch.float32)
 
     def __len__(self):
         return len(self.image_ids[self.split])

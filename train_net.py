@@ -30,7 +30,7 @@ def train_epoch(model: nn.Module,
                 logger: logging.Logger):
     model_name = type(model).__name__
     running_losses = defaultdict(float)
-    mca = MulticlassAccuracy(num_classes=200)
+    mca = MulticlassAccuracy(num_classes=200).to(device)
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
@@ -65,7 +65,7 @@ def val_epoch(model: nn.Module,
               device: torch.device,
               logger: logging.Logger):
     model_name = type(model).__name__
-    mca = MulticlassAccuracy(num_classes=200)
+    mca = MulticlassAccuracy(num_classes=200).to(device)
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}

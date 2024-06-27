@@ -14,6 +14,28 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+
+part_to_group_coarse = {
+    "head": [
+        "has bill color",
+        "has eye color",
+        "has crown color",
+        "has forehead color",
+        "has bill length",
+        "has bill shape",
+        "has nape color",
+        "has head pattern",
+    ],
+    "breast": ["has throat color", "has breast pattern", "has breast color"],
+    "belly": ["has underparts color", "has belly color", "has belly pattern"],
+    "back": ["has upperparts color", "has back pattern", "has back color"],
+    "wing": ["has wing pattern", "has wing color", "has wing shape"],
+    "tail": ["has tail shape", "has tail pattern", "has upper tail color", "has under tail color"],
+    "leg": ["has leg color"],
+    "others": ["has primary color", "has shape", "has size"],
+}
+
+
 part_map_fine = {'back': ("back",),
                  'beak': ("bill", "head",),
                  'belly': ("belly",),

@@ -41,7 +41,7 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_
                                     torch.tensor(np.stack(int_masks)))
         int_dataloader = DataLoader(int_dataset, batch_size=dataloader.batch_size)
 
-        mca = MulticlassAccuracy(num_classes=num_classes)
+        mca = MulticlassAccuracy(num_classes=num_classes).to(device)
         # Inference loop
         for batch_inputs, batch_int in tqdm(zip(dataloader, int_dataloader), total=len(dataloader)):
             _, int_masks = batch_int
@@ -64,7 +64,7 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_
 def test_interventions_full(model: nn.Module, dataloader: DataLoader, num_classes: int,
                             logger: logging.Logger, writer: SummaryWriter, device: torch.device):
     """Given a dataset and concept learning model, test its ability of responding to interventions"""
-    mca = MulticlassAccuracy(num_classes=num_classes)
+    mca = MulticlassAccuracy(num_classes=num_classes).to(device)
 
     # Inference loop
     for batch_inputs in tqdm(dataloader):
@@ -86,7 +86,7 @@ def test_accuracy(model: nn.Module,
                   device: torch.device,
                   writer: SummaryWriter,
                   logger: logging.Logger):
-    mca = MulticlassAccuracy(num_classes=num_classes)
+    mca = MulticlassAccuracy(num_classes=num_classes).to(device)
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
