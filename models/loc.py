@@ -8,31 +8,33 @@ class SingleBranchModel(nn.Module):
     def __init__(self, backbone: ResNet, class_embeddings: torch.Tensor) -> None:
         super().__init__()
         self.backbone = torch.nn.Sequential(*list(backbone.children())[:-2])
-        self.prototypes = nn.Parameter(2e-4 * torch.rand(312, 2048, 1, 1), requires_grad=True)
+        self.loc_prototypes = nn.Parameter(2e-4 * torch.rand(312, 2048, 1, 1), requires_grad=True)
+        self.pred_prototypes = nn.Parameter(2e-4 * torch.rand(312, 2048, 1, 1), requires_grad=True)
 
         self.pool = nn.AdaptiveMaxPool2d((1, 1))
 
-        self.s = nn.Sigmoid()
+        # self.s = nn.Sigmoid()
         self.register_buffer("class_embeddings", class_embeddings)
         
 
     def forward(self, x: torch.Tensor):
         x = self.backbone(x)
-        attn_maps = F.conv2d(input=x, weight=self.prototypes)
+        # Localization Branch
+        attn_maps = F.conv2d(input=x, weight=self.loc_prototypes)
         b, k, w, h = attn_maps.shape
-        c = F.max_pool2d(attn_maps, kernel_size=(w, h,)).view(b, -1)
-
-        c = self.s(c)
+        attr_preds = F.max_pool2d(attn_maps, kernel_size=(w, h,)).view(b, -1)
 
         # Prediction branch
-        y = c @ self.class_embeddings.T
+        pred_attn_maps = F.conv2d(input=x, weight=self.pred_prototypes)
+        class_preds = F.max_pool2d(pred_attn_maps, kernel_size=(w, h,)).view(b, -1) @ self.class_embeddings.Ts
 
         # shape: [b,num_classes], [b,k], [b,k,h,w]
         return {
-            "class_preds": y,
-            "attr_preds": c,
+            "class_preds": class_preds,
+            "attr_preds": attr_preds,
+            "pred_attn_maps": pred_attn_maps,
             "attn_maps": attn_maps,
-            "prototypes": self.prototypes.squeeze(),
+            "prototypes": self.loc_prototypes.squeeze(),
         }
     
     def c2y(self, c: torch.Tensor):
@@ -73,7 +75,7 @@ class Loss(nn.Module):
         self.l_dec_coef = l_dec_coef
 
         self.l_y = nn.CrossEntropyLoss()
-        self.l_c = None
+        self.l_c = nn.MSELoss()
 
         self.group_indices = group_indices
 

@@ -181,7 +181,7 @@ def main():
         weights = torch.load(cfg.MODEL.BACKBONE_WEIGHTS, map_location="cpu")
         backbone.load_state_dict(weights)
 
-    net = SingleBranchModel(backbone, class_embeddings=dataset_train.attribute_vectors_pt)
+    net = SingleBranchModel(backbone, class_embeddings=dataset_train.attribute_vectors_norm_pt)
 
     criterion = Loss(l_c_coef=cfg.MODEL.LOSSES.L_C,
                      l_y_coef=cfg.MODEL.LOSSES.L_Y,

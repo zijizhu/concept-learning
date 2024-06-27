@@ -3,7 +3,7 @@ MODEL:
   BACKBONE: "resnet101"
   BACKBONE_WEIGHTS: "checkpoints/resnet101.pth"
   LOSSES:
-    L_C: 0
+    L_C: 1e-1
     L_Y: 1
     L_CPT: 5e-3
     L_DEC: 4e-2
@@ -11,15 +11,15 @@ DATASET:
   NAME: "CUB"
   NUM_ATTRS: 312
   ROOT_DIR: "datasets"
-  USE_ATTRS: "data/cub/apn_binary_attributes.txt"
+  USE_ATTRS: "continuous"
   USE_ATTR_MASK: null
   USE_SPLITS: "data/cub/split_image_ids.npz"
-  AUGMENTATION: null
+  AUGMENTATION: "augment"
 OPTIM:
   OPTIMIZER: ADAM
   LR: 1e-4
   EPOCHS: 50
   BATCH_SIZE: 64
   WEIGHT_DECAY: 4e-4
-  EARLY_STOP: 15
+  EARLY_STOP: 5
 SEED: 42
