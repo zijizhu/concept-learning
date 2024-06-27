@@ -3,7 +3,7 @@ MODEL:
   BACKBONE: "resnet101"
   BACKBONE_WEIGHTS: "checkpoints/resnet101.pth"
   LOSSES:
-    L_C: 1e-1
+    L_C: 0
     L_Y: 1
     L_CPT: 5e-3
     L_DEC: 4e-2

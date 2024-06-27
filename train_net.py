@@ -184,11 +184,10 @@ def main():
     net = SingleBranchModel(backbone, class_embeddings=dataset_train.attribute_vectors_pt)
 
     criterion = Loss(l_c_coef=cfg.MODEL.LOSSES.L_C,
-                        l_y_coef=cfg.MODEL.LOSSES.L_Y,
-                        l_cpt_coef=cfg.MODEL.LOSSES.L_CPT,
-                        l_dec_coef=cfg.MODEL.LOSSES.L_DEC,
-                        group_indices=dataset_train.part_indices_pt.to(device),
-                        attribute_weights=None)
+                     l_y_coef=cfg.MODEL.LOSSES.L_Y,
+                     l_cpt_coef=cfg.MODEL.LOSSES.L_CPT,
+                     l_dec_coef=cfg.MODEL.LOSSES.L_DEC,
+                     group_indices=dataset_train.part_indices_pt.to(device))
 
     # Initialize optimizer
     for name, param in net.named_parameters():

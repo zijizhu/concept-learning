@@ -65,8 +65,7 @@ class SingleBranchModel(nn.Module):
 
 class Loss(nn.Module):
     def __init__(self, l_y_coef: float, l_c_coef: float, l_cpt_coef: float,
-                 l_dec_coef: float, group_indices: torch.Tensor = None,
-                 attribute_weights: torch.Tensor = None):
+                 l_dec_coef: float, group_indices: torch.Tensor = None):
         super().__init__()
         self.l_y_coef = l_y_coef
         self.l_c_coef = l_c_coef
@@ -74,15 +73,16 @@ class Loss(nn.Module):
         self.l_dec_coef = l_dec_coef
 
         self.l_y = nn.CrossEntropyLoss()
-        self.l_c = nn.BCELoss(weight=attribute_weights, reduction='sum')
+        self.l_c = None
 
         self.group_indices = group_indices
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
         loss_dict = {
-            "l_y": self.l_y_coef * self.l_y(outputs["class_preds"], batch["class_ids"]),
-            "l_c": self.l_c_coef * self.l_c(outputs["attr_preds"], batch["attr_scores"]),
+            "l_y": self.l_y_coef * self.l_y(outputs["class_preds"], batch["class_ids"])
         }
+        if self.l_c_coef > 0:
+            loss_dict["l_c"] = self.l_c_coef * self.l_c(outputs["attr_preds"], batch["attr_scores"])
         if self.l_cpt_coef > 0:
             loss_dict["l_cpt"] = self.l_cpt_coef * self.l_cpt(outputs["attn_maps"])
         if self.l_dec_coef > 0:
