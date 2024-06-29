@@ -75,7 +75,6 @@ def test_interventions_full(model: nn.Module, dataloader: DataLoader, num_classe
     # Compute accuracy
     acc = mca.compute().item()
     logger.info(f"Test accuracy with Full Intervention: {acc:.4f}")
-    writer.add_text(f"Test accuracy with Full Intervention: {acc:.4f}")
 
 
 @torch.no_grad()
@@ -95,7 +94,6 @@ def test_accuracy(model: nn.Module,
 
     acc = mca.compute().item()
     logger.info(f"Test accuracy: {acc:.4f}")
-    writer.add_text(f"Test accuracy: {acc:.4f}")
 
 
 def main():
