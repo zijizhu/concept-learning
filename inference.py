@@ -1,120 +1,109 @@
+#!/usr/bin/env python3
+
 import argparse
-import logging
-import os
-import sys
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
+import torchvision.transforms as T
 from lightning import seed_everything
-from omegaconf import OmegaConf
-from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
-from torch.utils.tensorboard.writer import SummaryWriter
+from PIL import Image
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
-from tqdm import tqdm
+from torchvision.models import ResNet101_Weights, resnet101
+from tqdm.notebook import tqdm
 
 from data.cub.cub_dataset import CUBDataset
 from data.cub.transforms import get_transforms_dev
-from metrics.loc import loc_eval
-from models.dev import DevModel
+from models.loc import SingleBranchModel
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Evaluation Script")
-    parser.add_argument("-e", "--experiment_dir", type=str, required=True)
+def visualize_attn_map(attn_map: np.ndarray, image: Image.Image):
+    attn_map_max = np.max(attn_map)
+    attn_map_min = np.min(attn_map)
+    scaled_map = (attn_map - attn_map_min) / (attn_map_max - attn_map_min)
+    heatmap = cv2.applyColorMap(np.uint8(255 * scaled_map), cv2.COLORMAP_JET)
+    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+    heatmap = heatmap.astype(np.float32) / 255
 
-    metric_items = ["accuracy", "full_int_acc", "int_acc_curve", "part_iou"]
-    parser.add_argument("-m", "--metrics", nargs="+", choices=metric_items,
-                        default=metric_items)
+    return 0.5 * heatmap + np.float32(np.array(image) / 255) * 0.5
 
-    args = parser.parse_args()
-    log_dir = Path(args.experiment_dir)
-    config_path = log_dir / "hparams.yaml"
-    cfg = OmegaConf.load(config_path)
-
-    seed_everything(cfg.SEED)
-    rng = np.random.default_rng(cfg.SEED)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    experiment_name = log_dir.stem
-    print("Experiment Name:", experiment_name)
-    print("Device:", device)
-
-    #################
-    # Setup logging #
-    #################
-
-    summary_writer = SummaryWriter(log_dir=str(log_dir))
-    summary_writer.add_text("Model", cfg.MODEL.NAME)
-    summary_writer.add_text("Dataset", cfg.DATASET.NAME)
-    summary_writer.add_text("Seed", str(cfg.SEED))
-    summary_writer.add_text("Device", str(device))
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.FileHandler(os.path.join(log_dir, "eval.log")),
-            logging.StreamHandler(sys.stdout),
-        ],
-        force=True,
-    )
-    logger = logging.getLogger(__name__)
-
-    #################################
-    # Setup datasets and transforms #
-    #################################
-
-    augmentation = cfg.DATASET.get("AUGMENTATION", None)
-    _, test_transforms = get_transforms_dev(cropped=bool(augmentation))
-
-    num_attrs = cfg.DATASET.get("NUM_ATTRS", 112)
-
-    num_classes = 200
-    # Loads cropped test images if model trained with aug
-    dataset_test = CUBDataset(Path(cfg.DATASET.ROOT_DIR) / "CUB", split="test",
-                                use_attrs=cfg.DATASET.USE_ATTRS, use_attr_mask=cfg.DATASET.USE_ATTR_MASK,
-                                use_splits=cfg.DATASET.USE_SPLITS, use_augmentation=augmentation,
-                                transforms=test_transforms)
-    dataloader_test = DataLoader(dataset=dataset_test, batch_size=cfg.OPTIM.BATCH_SIZE,
-                                    shuffle=True, num_workers=8)
-
-    ###############
-    # Load models #
-    ###############
-
-    from torchvision.models import ResNet101_Weights, resnet101
-    backbone = resnet101(weights=ResNet101_Weights.DEFAULT)
-
-    net = DevModel(backbone, num_attrs=num_attrs, num_classes=num_classes,
-                   use_attention=cfg.MODEL.USE_ATTENTION)
-    state_dict = torch.load(log_dir / f"{cfg.MODEL.NAME}.pth", map_location=device)
-    net.load_state_dict(state_dict)
-
-    ###############
-    # Evaluations #
-    ###############
-
-    net.to(device)
-    net.eval()
-
-    # Test Accuracy
-    
-    mca = MulticlassAccuracy(num_classes=num_classes).to(device)
-
-    attribute_activations = []
-    for batch_inputs in tqdm(dataloader_test):
-        batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
-        outputs = net(batch_inputs['pixel_values'])
-
-        mca(outputs["class_preds"], batch_inputs["class_ids"])
-
-    summary_writer.flush()
-    summary_writer.close()
-    logger.info("DONE!")
-
+prog = """Inference script to extract a visualization of attention map for each attribute"""
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(prog)
+    parser.add_argument("--test_accuracy", action="store_true")
+    parser.add_argument("--out_dir", type=str, default="visualizations")
+
+    seed_everything(42)
+
+    args = parser.parse_args()
+
+    train_transforms, test_transforms = get_transforms_dev(cropped=False)
+    dataset_test = CUBDataset(Path("datasets") / "CUB",
+                            split="test",
+                            use_attrs="continuous",
+                            use_attr_mask=None,
+                            use_augmentation="augment",
+                            use_splits="data/cub/split_image_ids.npz",
+                            transforms=test_transforms)
+
+    dataloader_test = DataLoader(dataset=dataset_test, batch_size=1, shuffle=True)
+
+    backbone = resnet101(weights=ResNet101_Weights.DEFAULT)
+
+    net = SingleBranchModel(backbone, class_embeddings=torch.zeros(200, 312))
+    state_dict = torch.load("logs/CUB_runs/loc_train_CUB_base/dev_resnet101.pth", map_location="cpu")
+    net.load_state_dict(state_dict)
+    net.eval()
+
+    if args.test_accuracy:
+        mca = MulticlassAccuracy(200, average="micro")
+        with torch.no_grad():
+            for batch_inputs in tqdm(dataloader_test):
+                out = net(batch_inputs['pixel_values'])
+                mca(out["class_preds"], batch_inputs["class_ids"])
+            
+        print(f"Test Acc: {mca.compute().item():.4f}")
+
+    attribute_activations = []
+    attn_maps = []
+    image_ids = []
+    with torch.no_grad():
+        for batch_inputs in tqdm(dataloader_test):
+            out = net(batch_inputs['pixel_values'])
+
+            attribute_activations.append(out["attr_preds"].numpy())
+            attn_maps.append(out["attn_maps"])
+            image_ids.append(batch_inputs["image_ids"])
+    
+    attribute_activations = np.concatenate(attribute_activations)
+    attn_maps = np.concatenate(attn_maps)
+    image_ids = np.concatenate(image_ids, axis=0)
+
+    resize_transforms = T.Compose([
+        T.Resize(232),
+        T.CenterCrop(224)
+    ])
+
+    attribute_df = dataset_test.attribute_df
+
+    writer = SummaryWriter(log_dir=args.out_dir)
+
+    for attr_id in tqdm(range(312)):
+        max_activation_idx = np.argmax(attribute_activations[:, attr_id])
+
+        attn_map = attn_maps[max_activation_idx, attr_id, :, :]
+        attn_map_resized = cv2.resize(attn_map, (224, 224,))
+
+        im_id = image_ids[max_activation_idx]
+        filename = dataset_test.main_df.loc[im_id, "filename"]
+        path_to_image = Path("datasets") / "CUB" / "CUB_200_2011" / "images" / filename
+        im = Image.open(path_to_image).convert("RGB")
+        img_transformed = resize_transforms(im)
+
+        vis = visualize_attn_map(attn_map_resized, img_transformed)
+        attribute_name = attribute_df.loc[attr_id, "attribute"]
+        writer.add_image(f"{attribute_name} | {filename}", vis, dataformats='HWC')
