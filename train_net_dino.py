@@ -34,16 +34,17 @@ def train_epoch(model: nn.Module,
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
         outputs = model(batch_inputs["pixel_values"])
-        total_loss = loss_fn(outputs, batch_inputs["class_ids"])
+        loss_dict = loss_fn(outputs, batch_inputs)
+        total_loss = sum(loss_dict.values())
 
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-
-
-        running_losses["xe loss"] += total_loss * dataloader.batch_size
         
-        mca(outputs, batch_inputs["class_ids"])
+        for loss_name, loss in loss_dict.items():
+            running_losses[loss_name] += loss * dataloader.batch_size
+        
+        mca(outputs["class_preds"], batch_inputs["class_ids"])
 
     # Log metrics
     for loss_name, loss in running_losses.items():
@@ -70,7 +71,7 @@ def val_epoch(model: nn.Module,
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
         outputs = model(batch_inputs["pixel_values"])
 
-        mca(outputs, batch_inputs["class_ids"])
+        mca(outputs["class_preds"], batch_inputs["class_ids"])
 
     epoch_acc = mca.compute().item()
     writer.add_scalar(f"Acc/{model_name}/val", epoch_acc, epoch)
@@ -83,13 +84,32 @@ class DINOClassifier(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14_reg')
-        self.fc = nn.Linear(768, 200)
+        self.fc_c = nn.Linear(768, 112)
+        self.s = nn.Sigmoid()
+        self.fc_y = nn.Linear(112, 200)
     
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         features = self.backbone(x)
-        class_preds = self.fc(features)
+        c = self.fc_c(features)
+        c_probs = self.s(c)
+        y = self.fc_y(c_probs)
 
-        return class_preds
+        return {"attr_preds": c, "class_preds": y}
+
+class CBMCriterion(nn.Module):
+    def __init__(self, l_y_coef: float, l_c_coef: float) -> None:
+        super().__init__()
+        self.l_y_coef = l_y_coef
+        self.l_c_coef = l_c_coef
+        self.xe = nn.CrossEntropyLoss()
+        self.bce = nn.BCEWithLogitsLoss(reduction="sum")
+    
+    def forward(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
+        print(batch["attr_scores"])
+        return {
+            "l_y": self.l_y_coef * self.xe(outputs["class_preds"], batch["class_ids"]),
+            "l_c": self.l_c_coef * self.bce(outputs["attr_preds"], batch["attr_scores"])
+        }
 
 
 def main():
@@ -174,7 +194,7 @@ def main():
 
     net = DINOClassifier()
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = CBMCriterion(cfg.model.loss.l_y, cfg.model.loss.l_c)
 
     # Initialize optimizer
     for name, param in net.named_parameters():

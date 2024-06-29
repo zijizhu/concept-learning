@@ -1,16 +1,19 @@
 model:
   name: "dinov2_vitb14_reg_cub_ft"
+  loss:
+    l_y: 1
+    l_c: 1e-2
 dataset:
   name: "CUB"
   num_attrs: 112
   root_dir: "datasets"
-  use_attrs: "continuous"
-  use_attr_mask: null
+  use_attrs: "data/cub/attributes.txt"
+  use_attr_mask: "data/cub/cbm_attribute_mask.txt"
   use_splits: "data/cub/split_image_ids.npz"
   augmentation: null
 optim:
   lr: 1e-4
-  epochs: 50
+  epochs: 100
   batch_size: 64
   weight_decay: 4e-4
   early_stop: 8
