@@ -130,7 +130,8 @@ class CUBDataset(Dataset):
         # Load part or attribute groups #
         #################################
         self.group_names = sorted(self.attribute_df['attribute_group'].unique())
-        self.attribute_group_indices = (self.attribute_df['attribute_group']
+        self.attribute_group_indices = (self.attribute_df
+                                        .loc[attr_mask, 'attribute_group']
                                         .map(self.group_names.index)
                                         .to_numpy())
 
