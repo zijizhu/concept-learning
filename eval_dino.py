@@ -150,7 +150,6 @@ def main():
         T.ToTensor(),
         T.Normalize(mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD)
     ])
-    augmentation = cfg.DATASET.get("AUGMENTATION", None)
 
     num_classes = 200
     # Loads cropped test images if model trained with aug
@@ -168,7 +167,7 @@ def main():
     # Evaluations #
     ###############
     net = DINOClassifier()
-    state_dict = torch.load(log_dir / f"{cfg.MODEL.NAME}.pth", map_location=device)
+    state_dict = torch.load(log_dir / f"{cfg.model.name}.pth", map_location=device)
     net.load_state_dict(state_dict)
     net.to(device)
     net.eval()
