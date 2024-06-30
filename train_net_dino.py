@@ -17,6 +17,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
+from models.dino import CBMCriterion, DINOLocClassifier
 
 
 def train_epoch(model: nn.Module,
@@ -80,38 +81,6 @@ def val_epoch(model: nn.Module,
     return epoch_acc
 
 
-class DINOClassifier(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14_reg')
-        self.fc_c = nn.Linear(768, 112)
-        self.s = nn.Sigmoid()
-        self.fc_y = nn.Linear(112, 200)
-    
-    def forward(self, x: torch.Tensor):
-        features = self.backbone(x)
-        c = self.fc_c(features)
-        c_probs = self.s(c)
-        y = self.fc_y(c_probs)
-
-        return {"attr_preds": c, "class_preds": y}
-
-class CBMCriterion(nn.Module):
-    def __init__(self, l_y_coef: float, l_c_coef: float) -> None:
-        super().__init__()
-        self.l_y_coef = l_y_coef
-        self.l_c_coef = l_c_coef
-        self.xe = nn.CrossEntropyLoss()
-        self.bce = nn.BCEWithLogitsLoss(reduction="sum")
-    
-    def forward(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-        print(batch["attr_scores"])
-        return {
-            "l_y": self.l_y_coef * self.xe(outputs["class_preds"], batch["class_ids"]),
-            "l_c": self.l_c_coef * self.bce(outputs["attr_preds"], batch["attr_scores"])
-        }
-
-
 def main():
     parser = argparse.ArgumentParser(description="DINO Training Script")
     parser.add_argument("-c", "--config_path", type=str, required=True)
@@ -165,8 +134,8 @@ def main():
     #################################
 
     augmentation = cfg.dataset.get("augmentation", None)
-    IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
-    IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)
+    IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406,)
+    IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225,)
     transforms = T.Compose([
         T.Resize(256),
         T.CenterCrop(224),
@@ -191,10 +160,14 @@ def main():
     #################################
     # Load and fine-tune full model #
     #################################
+    num_attrs = cfg.dataset.num_attrs
+    net = DINOLocClassifier(num_attrs=num_attrs)
 
-    net = DINOClassifier()
-
-    criterion = CBMCriterion(cfg.model.loss.l_y, cfg.model.loss.l_c)
+    criterion = CBMCriterion(l_y_coef=cfg.model.loss.l_y,
+                             l_c_coef=cfg.model.loss.l_c,
+                             l_cpt_coef=cfg.model.loss.l_cpt,
+                             l_dec_coef=cfg.model.loss.l_dec,
+                             group_indices=dataset_train.part_indices_pt.to(device=device))
 
     # Initialize optimizer
     for name, param in net.named_parameters():

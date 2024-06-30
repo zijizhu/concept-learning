@@ -42,14 +42,14 @@ def test_interventions(model: nn.Module, dataloader: DataLoader, num_int_groups_
 
         mca = MulticlassAccuracy(num_classes=num_classes).to(device)
         # Inference loop
-        for batch_inputs, batch_int in tqdm(zip(dataloader, int_dataloader), total=len(dataloader)):
+        for batch, batch_int in tqdm(zip(dataloader, int_dataloader), total=len(dataloader)):
             _, int_masks = batch_int
-            batch = {k: v.to(device) for k, v in batch_inputs.items()}
+            batch = {k: v.to(device) for k, v in batch.items()}
             int_masks = int_masks.to(device)
             int_values = batch["attr_scores"]
             outputs = model.inference(batch["pixel_values"], int_mask=int_masks, int_values=int_values)
 
-            mca(outputs["class_preds"], batch_inputs["class_ids"])
+            mca(outputs["class_preds"], batch["class_ids"])
 
         # Compute accuracy
         acc = mca.compute().item()

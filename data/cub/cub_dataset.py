@@ -1,4 +1,3 @@
-import pickle as pkl
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +9,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 
 from .augment import get_augmented_train_df
+from .constants import GROUP_PART_MAP_FINE, PART_GROUP_MAP_FINE
 
 
 class CUBDataset(Dataset):
@@ -19,7 +19,7 @@ class CUBDataset(Dataset):
                  use_augmentation: str | None = None,
                  use_attrs: str | Path | np.ndarray | torch.Tensor = "binary",
                  use_attr_mask: str | Path | np.ndarray = None,
-                 use_part_group: str = "coarse",
+                 use_parts: str = "coarse",
                  use_splits: str | Path | dict | None = None,
                  transforms: t.Compose | None = None) -> None:
         super().__init__()
@@ -168,18 +168,20 @@ class CUBDataset(Dataset):
         #############################################################################
         # Load part annotations including keypoint and part-based asttribute groups #
         #############################################################################
-        assert use_part_group in ["fine", "coarse"]
-        part_ann_filename = f"keypoint_annotations_{use_part_group}.pkl"
-        with open(self.dataset_dir / part_ann_filename, "rb") as fp:
-                self.part_keypoint_annotation = pkl.load(fp)
-
-    @property
-    def part_names(self) -> list[str]:
-        return self.part_keypoint_annotation["processed_part_names"]
+        assert use_parts in ["fine", "coarse"]
+        if use_parts == "coarse":
+            self.part_names = sorted(PART_GROUP_MAP_FINE.keys())
+            self.attribute_df["part_name"] = (self.attribute_df["attribute_group"]
+                                              .map(GROUP_PART_MAP_FINE.get))
+            self.attribute_df["part_id"] = self.attribute_df["part_name"].map(self.part_names.index)
+        else:
+            raise NotImplementedError
     
     @property
-    def part_indices(self) -> list[int]:
-        return list(map(self.part_names.index, self.part_keypoint_annotation["attribute_part_map"]))
+    def part_indices(self) -> np.ndarray:
+        return (self.attribute_df
+                .loc[self.attribute_df["model_attribute_index"] >= 0, "part_id"]
+                .values.astype(int))
 
     @property
     def attribute_weights(self):
