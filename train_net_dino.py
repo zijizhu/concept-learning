@@ -35,7 +35,7 @@ def train_epoch(model: nn.Module,
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
         outputs = model(batch_inputs["pixel_values"])
-        loss_dict = loss_fn(outputs, batch_inputs)
+        loss_dict = loss_fn(outputs, batch_inputs, model.prototypes)
         total_loss = sum(loss_dict.values())
 
         total_loss.backward()
