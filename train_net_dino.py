@@ -145,12 +145,12 @@ def main():
     dataset_train = CUBDataset(Path(cfg.dataset.root_dir) / "CUB", split="train_val",
                                 use_attrs=cfg.dataset.use_attrs, use_attr_mask=cfg.dataset.use_attr_mask,
                                 use_splits=cfg.dataset.use_splits, use_augmentation=augmentation,
-                                transforms=transforms, use_part_group="coarse")
+                                transforms=transforms, use_parts="coarse")
     print("Training set size:", len(dataset_train))
     dataset_val = CUBDataset(Path(cfg.dataset.root_dir) / "CUB", split="test",
                                 use_attrs=cfg.dataset.use_attrs, use_attr_mask=cfg.dataset.use_attr_mask,
                                 use_splits=cfg.dataset.use_splits, use_augmentation=augmentation,
-                                transforms=transforms, use_part_group="coarse")
+                                transforms=transforms, use_parts="coarse")
     print("Validation set size:", len(dataset_val))
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=cfg.optim.batch_size,
                                     shuffle=True, num_workers=8)
