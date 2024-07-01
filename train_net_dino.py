@@ -13,11 +13,11 @@ from omegaconf import OmegaConf
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
-from torchmetrics.classification import MulticlassAccuracy
+from torchmetrics.classification import MulticlassAccuracy, MultilabelAccuracy
 from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
-from models.dino import CBMCriterion, DINOLocClassifier
+from models.dino import DINOPPNet, DINOPPNetLoss
 
 
 def train_epoch(model: nn.Module,
@@ -30,12 +30,13 @@ def train_epoch(model: nn.Module,
                 logger: logging.Logger):
     model_name = type(model).__name__
     running_losses = defaultdict(float)
-    mca = MulticlassAccuracy(num_classes=200).to(device)
+    # mca = MulticlassAccuracy(num_classes=200).to(device)
+    mla = MultilabelAccuracy(num_labels=112).to(device)
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
         outputs = model(batch_inputs["pixel_values"])
-        loss_dict = loss_fn(outputs, batch_inputs, model.prototypes)
+        loss_dict = loss_fn(outputs, batch_inputs, model.prototype_class_identity)
         total_loss = sum(loss_dict.values())
 
         total_loss.backward()
@@ -45,7 +46,8 @@ def train_epoch(model: nn.Module,
         for loss_name, loss in loss_dict.items():
             running_losses[loss_name] += loss * dataloader.batch_size
         
-        mca(outputs["class_preds"], batch_inputs["class_ids"])
+        # mca(outputs["class_preds"], batch_inputs["class_ids"])
+        mla(outputs["attr_preds"], batch_inputs["attr_scores"])
 
     # Log metrics
     for loss_name, loss in running_losses.items():
@@ -53,7 +55,7 @@ def train_epoch(model: nn.Module,
         writer.add_scalar(f"Loss/{model_name}/train/{loss_name}", loss_avg, epoch)
         logger.info(f"EPOCH {epoch} {model_name} Train {loss_name}: {loss_avg:.4f}")
 
-    epoch_acc = mca.compute().item()
+    epoch_acc = mla.compute().item()
     writer.add_scalar(f"Acc/{model_name}/train", epoch_acc, epoch)
     logger.info(f"EPOCH {epoch} {model_name} Train Acc: {epoch_acc:.4f}")
 
@@ -66,15 +68,16 @@ def val_epoch(model: nn.Module,
               device: torch.device,
               logger: logging.Logger):
     model_name = type(model).__name__
-    mca = MulticlassAccuracy(num_classes=200).to(device)
+    # mca = MulticlassAccuracy(num_classes=200).to(device)
+    mla = MultilabelAccuracy(num_labels=112).to(device)
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
         outputs = model(batch_inputs["pixel_values"])
 
-        mca(outputs["class_preds"], batch_inputs["class_ids"])
+        mla(outputs["attr_preds"], batch_inputs["attr_scores"])
 
-    epoch_acc = mca.compute().item()
+    epoch_acc = mla.compute().item()
     writer.add_scalar(f"Acc/{model_name}/val", epoch_acc, epoch)
     logger.info(f"EPOCH {epoch} {model_name} Val Acc: {epoch_acc:.4f}")
 
@@ -161,13 +164,14 @@ def main():
     # Load and fine-tune full model #
     #################################
     num_attrs = cfg.dataset.num_attrs
-    net = DINOLocClassifier(num_attrs=num_attrs)
-
-    criterion = CBMCriterion(l_y_coef=cfg.model.loss.l_y,
-                             l_c_coef=cfg.model.loss.l_c,
-                             l_cpt_coef=cfg.model.loss.l_cpt,
-                             l_dec_coef=cfg.model.loss.l_dec,
-                             group_indices=dataset_train.part_indices_pt.to(device=device))
+    K = 5
+    backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14_reg')
+    net = DINOPPNet(backbone=backbone, prototype_shape=(num_attrs * K, 768), num_classes=num_attrs,
+                    init_weights=True, activation_fn="log", use_relu=True)
+    criterion = DINOPPNetLoss(l_c_coef=cfg.model.loss.l_c,
+                              l_clst_coef=cfg.model.loss.l_clst,
+                              l_sep_coef=cfg.model.loss.l_sep,
+                              k=K).to(device=device)
 
     # Initialize optimizer
     for name, param in net.named_parameters():

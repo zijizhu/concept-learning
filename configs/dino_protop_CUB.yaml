@@ -1,0 +1,21 @@
+model:
+  name: "dinov2_proto"
+  loss:
+    l_c: 1
+    l_clst: 0.8
+    l_sep: -0.08
+dataset:
+  name: "CUB"
+  num_attrs: 112
+  root_dir: "datasets"
+  use_attrs: "data/cub/cbm_binary_attributes.txt"
+  use_attr_mask: "data/cub/cbm_attribute_mask.txt"
+  use_splits: "data/cub/split_image_ids.npz"
+  augmentation: null
+optim:
+  lr: 1e-4
+  epochs: 200
+  batch_size: 64
+  weight_decay: 4e-4
+  early_stop: 10
+seed: 42

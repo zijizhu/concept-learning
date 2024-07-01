@@ -16,7 +16,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from data.cub.cub_dataset import CUBDataset
-from models.dino import DINOClassifier
+from models.dino import DINOClassifier, DINOPPNet, DINOPPNetLoss
 
 
 @torch.inference_mode()
@@ -154,7 +154,7 @@ def main():
     dataset_test = CUBDataset(Path(cfg.dataset.root_dir) / "CUB", split="test",
                               use_attrs=cfg.dataset.use_attrs, use_attr_mask=cfg.dataset.use_attr_mask,
                               use_splits=cfg.dataset.use_splits, use_augmentation=augmentation,
-                              transforms=transforms, use_part_group="coarse")
+                              transforms=transforms, use_parts="coarse")
     print("Test set size:", len(dataset_test))
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=cfg.optim.batch_size,
                                  shuffle=True, num_workers=8)
