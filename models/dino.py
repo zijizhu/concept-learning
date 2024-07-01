@@ -220,7 +220,7 @@ class DINOPPNetLoss(nn.Module):
             non_gt_min_distances = non_gt_min_distances.view(-1, 5)  # shape: [num_active_attr, k]
             non_gt_min_distances, _ = torch.min(non_gt_min_distances, dim=-1) # shape: [num_active_attr,]
             separation_costs.append(torch.mean(non_gt_min_distances))
-        return sum(cluster_costs), sum(separation_costs)
+        return sum(cluster_costs) / len(cluster_costs), sum(separation_costs) / len(separation_costs)
 
 
 class CBMCriterion(nn.Module):
