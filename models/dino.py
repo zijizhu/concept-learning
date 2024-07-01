@@ -190,8 +190,10 @@ class DINOPPNetLoss(nn.Module):
         l_clst, l_sep = self.compute_protopnet_losses(outputs["min_distances"],
                                                       batch["attr_scores"],
                                                       prototype_class_identities)
-        loss_dict["l_clst"] = self.l_clst_coef * l_clst
-        loss_dict["l_sep"] = self.l_sep_coef * l_sep
+        if self.l_clst_coef != 0:
+            loss_dict["l_clst"] = self.l_clst_coef * l_clst
+        if self.l_sep_coef != 0:
+            loss_dict["l_sep"] = self.l_sep_coef * l_sep
         return loss_dict
     
     @staticmethod
