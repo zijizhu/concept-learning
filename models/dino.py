@@ -92,7 +92,7 @@ class DINOPPNet(nn.Module):
 
         assert(self.num_prototypes % self.num_classes == 0)
         # a onehot indication matrix for each prototype's class identity
-        self.prototype_class_identity = torch.zeros(self.num_prototypes, self.num_classes)
+        self.register_buffer("prototype_class_identity", torch.zeros(self.num_prototypes, self.num_classes))
 
         num_prototypes_per_class = self.num_prototypes // self.num_classes
         for j in range(self.num_prototypes):
