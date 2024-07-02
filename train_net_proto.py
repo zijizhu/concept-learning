@@ -147,7 +147,7 @@ def main():
     from torchvision.models import densenet121, DenseNet121_Weights
     # TODO: Figure out what modification need to be done for backbone
     backbone = densenet121(weights=DenseNet121_Weights.DEFAULT)
-    ppnet = PPNet(backbone=backbone, prototype_shape=(2000, 1024, 1, 1,),
+    ppnet = PPNet(backbone=backbone, prototype_shape=(2000, 128, 1, 1,),
                   num_classes=200, activation_fn="log", init_weights=True).to(device)
 
     criterion = PPNetLoss(l_clst_coef=0.8, l_sep_coef=-0.08, l_l1_coef=1e-4)
