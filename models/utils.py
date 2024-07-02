@@ -1,7 +1,3 @@
-import timm
-from torch import nn, optim
-
-
 import torch
 import torch.nn.functional as F
 from torch import nn
