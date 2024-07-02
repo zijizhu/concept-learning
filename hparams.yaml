@@ -1,8 +1,0 @@
-CONFIG_PATH: "configs/dev_train_CUB.yaml"
-DATASET: "CUB"
-DATASET.TRAIN_VAL:
-  - "train/val"
-  - "train_val"
-DATASET.CROP:
-  - True
-  - False

@@ -30,6 +30,7 @@ def visualize_attn_map(attn_map: np.ndarray, image: Image.Image):
 
     return 0.5 * heatmap + np.float32(np.array(image) / 255) * 0.5
 
+
 prog = """Inference script to extract a visualization of attention map for each attribute"""
 
 if __name__ == "__main__":

@@ -1,6 +1,4 @@
 import timm
-import torch
-import torch.nn.functional as F
 from torch import nn, optim
 
 
@@ -10,7 +8,6 @@ from torch import nn
 
 
 class PPNet(nn.Module):
-
     def __init__(self, backbone, prototype_shape, num_classes, init_weights=True, activation_fn='log'):
         super().__init__()
         self.prototype_shape = prototype_shape
@@ -23,13 +20,20 @@ class PPNet(nn.Module):
 
         assert(self.num_prototypes % self.num_classes == 0)
         # a onehot indication matrix for each prototype's class identity
-        self.prototype_class_identity = torch.zeros(self.num_prototypes, self.num_classes)
+        self.register_buffer("prototype_class_identity", torch.zeros(self.num_prototypes, self.num_classes))
 
         num_prototypes_per_class = self.num_prototypes // self.num_classes
         for j in range(self.num_prototypes):
             self.prototype_class_identity[j, j // num_prototypes_per_class] = 1
 
-        self.backbone = backbone
+        self.features = nn.Sequential(*list(backbone.features.children()))
+
+        self.add_on_layers = nn.Sequential(
+            nn.Conv2d(in_channels=backbone.classifier.in_features, out_channels=self.prototype_shape[1], kernel_size=1),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=self.prototype_shape[1], out_channels=self.prototype_shape[1], kernel_size=1),
+            nn.Sigmoid()
+        )
 
         self.prototype_vectors = nn.Parameter(torch.rand(self.prototype_shape))
 
@@ -42,11 +46,11 @@ class PPNet(nn.Module):
             self._initialize_weights()
 
     def _l2_convolution(self, x):
-        '''
+        """
         Compute x ** 2 - 2 * x * prototype + prototype ** 2
         All channels of x2_patch_sum at position i, j have the same values
         All spacial values of p2_reshape at each channel are the same
-        '''
+        """
         x2 = x ** 2  # shape: [b, c, h, w]
         x2_patch_sum = F.conv2d(input=x2, weight=self.ones)  # shape: [b, num_prototypes, h, w]
 
@@ -65,7 +69,7 @@ class PPNet(nn.Module):
         '''
         x is the raw input
         '''
-        conv_features = self.backbone(x)
+        conv_features = self.features(x)
         distances = self._l2_convolution(conv_features)
         return distances
 
@@ -98,52 +102,71 @@ class PPNet(nn.Module):
                                           + incorrect_class_connection * negative_one_weights_locations)
 
     def _initialize_weights(self):
-    #     for m in self.add_on_layers.modules():
-    #         if isinstance(m, nn.Conv2d):
-    #             # every init technique has an underscore _ in the name
-    #             nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        for m in self.add_on_layers.modules():
+            if isinstance(m, nn.Conv2d):
+                # every init technique has an underscore _ in the name
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
 
-    #             if m.bias is not None:
-    #                 nn.init.constant_(m.bias, 0)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
-    #         elif isinstance(m, nn.BatchNorm2d):
-    #             nn.init.constant_(m.weight, 1)
-    #             nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
 
         self.set_last_layer_incorrect_connection(incorrect_strength=-0.5)
 
 
-class Backbone(nn.Module):
-    def __init__(self, name: str, num_classes: int):
+class PPNetLoss(nn.Module):
+    def __init__(self, l_clst_coef: float, l_sep_coef: float, l_l1_coef: float) -> None:
         super().__init__()
-        if name == 'inception_v3':
-            self.backbone = timm.create_model('inception_v3', pretrained=True, aux_logits=False)
-        else:
-            raise NotImplementedError
-        self.fc = nn.Linear(self.backbone.fc.in_features, num_classes)
+        self.l_clst_coef = l_clst_coef
+        self.l_sep_coef = l_sep_coef
+        self.l_l1_coef = l_l1_coef
+        self.xe = nn.CrossEntropyLoss()
 
-    def forward(self, batch):
-        x = batch['pixel_values']
-        x = self.backbone.forward_features(x)
-        x = self.backbone.global_pool(x)
-        x = self.backbone.head_drop(x)
-        y = self.fc(x)
-        return {'class_preds': y}
+    def forward(self, outputs: tuple[torch.Tensor, torch.Tensor],
+                batch: dict[str, torch.Tensor],
+                prototype_class_identities: torch.Tensor,
+                last_layer_weights: torch.Tensor):
 
+        logits, min_distances = outputs
+        loss_dict = dict()
+        loss_dict["l_y"] = self.xe(logits, batch["class_ids"])
+        if self.l_clst_coef != 0:
+            l_clst = self.compute_clst_loss(min_distances, batch["class_ids"], prototype_class_identities)
+            loss_dict["l_clst"] = self.l_clst_coef * l_clst
+        if self.l_sep_coef != 0:
+            l_sep = self.compute_sep_loss(min_distances, batch["class_ids"], prototype_class_identities)
+            loss_dict["l_sep"] = self.l_sep_coef * l_sep
 
-def loss_fn(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]):
-    preds = outputs['class_preds']
+        l1_mask = 1 - prototype_class_identities.T
+        l1 = (last_layer_weights * l1_mask).norm(p=1)
+        loss_dict["l_l1"] = self.l_l1_coef * l1
+        return loss_dict
 
-    loss = F.cross_entropy(preds, batch['class_ids'])
-    return {'l_total': loss.item()}, loss
+    @staticmethod
+    def compute_clst_loss(l2_dists: torch.Tensor,
+                          class_ids: torch.Tensor,
+                          class_identities: torch.Tensor,
+                          dim: int = 1024):
+        max_dist = dim
+        prototypes_of_correct_class = torch.t(class_identities[:, class_ids])
 
+        inverted_distances, _ = torch.max((max_dist - l2_dists) * prototypes_of_correct_class, dim=1)
+        cluster_cost = torch.mean(max_dist - inverted_distances)
+        return cluster_cost
 
-def load_backbone_for_finetuning(
-    backbone_name: str,
-    num_classes: int,
-    lr: float,
-    weight_decay: float
-):
-    net = Backbone(name=backbone_name, num_classes=num_classes)
-    optimizer = optim.SGD(params=net.parameters(), lr=lr, weight_decay=weight_decay)
-    return net, loss_fn, optimizer, None
+    @staticmethod
+    def compute_sep_loss(l2_dists: torch.Tensor,
+                         class_ids: torch.Tensor,
+                         class_identities: torch.Tensor,
+                         dim: int = 1024):
+        # calculate separation cost
+        max_dist = dim
+        prototypes_of_correct_class = torch.t(class_identities[:, class_ids])
+
+        prototypes_of_wrong_class = 1 - prototypes_of_correct_class
+        inverted_distances_non_target, _ = torch.max((max_dist - l2_dists) * prototypes_of_wrong_class, dim=1)
+        separation_cost = torch.mean(max_dist - inverted_distances_non_target)
+        return separation_cost
