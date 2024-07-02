@@ -66,6 +66,7 @@ class PPNet(nn.Module):
         x is the raw input
         '''
         conv_features = self.features(x)
+        conv_features = self.add_on_layers(conv_features)
         distances = self._l2_convolution(conv_features)
         return distances
 
