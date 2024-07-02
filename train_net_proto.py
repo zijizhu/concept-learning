@@ -72,9 +72,9 @@ def val_epoch(model: nn.Module,
 
     for batch_inputs in tqdm(dataloader):
         batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
-        outputs = model(batch_inputs["pixel_values"])
+        logits, l2_dists = model(batch_inputs["pixel_values"])
 
-        mca(outputs["class_preds"], batch_inputs["class_ids"])
+        mca(logits, batch_inputs["class_ids"])
 
     epoch_acc = mca.compute().item()
     writer.add_scalar(f"Acc/{model_name}/val", epoch_acc, epoch)
